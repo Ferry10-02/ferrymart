@@ -46,6 +46,8 @@ const productSchema = z.object({
 router.get('/dashboard', ...sellerGuard, sellerController.getSellerDashboard);
 router.get('/settings', ...sellerGuard, sellerController.getStoreSettings);
 router.put('/settings', ...sellerGuard, sellerController.updateStoreSettings);
+router.post('/telegram/detect', ...sellerGuard, sellerController.detectSellerTelegram);
+router.post('/telegram/test', ...sellerGuard, sellerController.testSellerTelegram);
 router.post('/media', ...sellerGuard, uploadLimiter, uploadImage.single('file'), sellerController.uploadStoreMedia);
 
 router.get('/products', ...sellerGuard, sellerController.listSellerProducts);

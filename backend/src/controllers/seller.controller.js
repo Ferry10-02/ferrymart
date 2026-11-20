@@ -3,9 +3,15 @@ const { AppError, asyncHandler } = require('../utils/errors');
 const { slugify } = require('../utils/sanitize');
 const { uploadFile } = require('../services/storage.service');
 const { generateProductQr } = require('../services/qr.service');
-const { notifyUser } = require('../services/notification.service');
+const {
+  notifyUser,
+  getTelegramBotInfo,
+  detectRecentTelegramChats,
+  sendTelegramMessage,
+} = require('../services/notification.service');
 const { NOTIFICATION_EVENTS } = require('../utils/constants');
 const { invalidateCachePrefix } = require('../utils/cache');
+const { invalidateUserCache } = require('../middleware/auth.middleware');
 
 // PUBLIC: GET /api/sellers/store/:slug
 const getPublicStore = asyncHandler(async (req, res) => {
@@ -119,10 +125,19 @@ const getSellerDashboard = asyncHandler(async (req, res) => {
 
 // GET /api/sellers/settings & PUT /api/sellers/settings
 const getStoreSettings = asyncHandler(async (req, res) => {
-  const seller = await prisma.sellerProfile.findUnique({
-    where: { id: req.user.sellerProfile.id },
+  const [seller, profile, telegramBot] = await Promise.all([
+    prisma.sellerProfile.findUnique({ where: { id: req.user.sellerProfile.id } }),
+    prisma.profile.findUnique({ where: { id: req.user.id }, select: { telegramChatId: true } }),
+    getTelegramBotInfo(),
+  ]);
+  res.json({
+    success: true,
+    data: {
+      ...seller,
+      telegramChatId: profile?.telegramChatId || '',
+      telegramBot,
+    },
   });
-  res.json({ success: true, data: seller });
 });
 
 const updateStoreSettings = asyncHandler(async (req, res) => {
@@ -138,6 +153,7 @@ const updateStoreSettings = asyncHandler(async (req, res) => {
     bankName,
     bankAccountNumber,
     bankAccountHolder,
+    telegramChatId,
   } = req.body;
 
   const updated = await prisma.sellerProfile.update({
@@ -156,7 +172,90 @@ const updateStoreSettings = asyncHandler(async (req, res) => {
     },
   });
 
-  res.json({ success: true, message: 'Pengaturan toko berhasil disimpan.', data: updated });
+  if (telegramChatId !== undefined) {
+    await prisma.profile.update({
+      where: { id: req.user.id },
+      data: { telegramChatId: telegramChatId ? String(telegramChatId).trim() : null },
+    });
+    invalidateUserCache(req.user.id);
+  }
+
+  const [profile, telegramBot] = await Promise.all([
+    prisma.profile.findUnique({ where: { id: req.user.id }, select: { telegramChatId: true } }),
+    getTelegramBotInfo(),
+  ]);
+
+  res.json({
+    success: true,
+    message: 'Pengaturan toko & Telegram berhasil disimpan.',
+    data: {
+      ...updated,
+      telegramChatId: profile?.telegramChatId || '',
+      telegramBot,
+    },
+  });
+});
+
+// POST /api/sellers/telegram/detect - Auto-detect Seller's Telegram Chat ID from recent /start messages
+const detectSellerTelegram = asyncHandler(async (req, res) => {
+  const chats = await detectRecentTelegramChats();
+  if (chats.length === 0) {
+    throw new AppError(
+      'Belum ada pesan masuk ke bot Telegram. Silakan buka bot Telegram FerryMarket lalu tekan tombol START terlebih dahulu, kemudian klik deteksi lagi.',
+      404,
+      'NO_TELEGRAM_UPDATES'
+    );
+  }
+
+  const latest = chats[0];
+  await prisma.profile.update({
+    where: { id: req.user.id },
+    data: { telegramChatId: latest.chatId },
+  });
+  invalidateUserCache(req.user.id);
+
+  // Send immediate confirmation message to the Seller's Telegram
+  await sendTelegramMessage({
+    userId: req.user.id,
+    chatId: latest.chatId,
+    eventType: 'TELEGRAM_CONNECTED',
+    message: `✅ <b>Notifikasi Telegram Seller Aktif!</b>\n\nToko <b>${req.user.sellerProfile.storeName}</b> berhasil terhubung ke FerryMarket.\nAnda akan otomatis menerima notifikasi saat ada pesanan baru, bukti pembayaran, pembayaran disetujui, scan QR, dan chat pembeli.`,
+  });
+
+  res.json({
+    success: true,
+    message: `Chat ID Telegram (${latest.chatId} - ${latest.firstName}) berhasil terdeteksi & otomatis tersimpan! Cek pesan konfirmasi di Telegram Anda.`,
+    data: { chatId: latest.chatId, detected: latest, allRecentChats: chats },
+  });
+});
+
+// POST /api/sellers/telegram/test - Send test Telegram notification to Seller
+const testSellerTelegram = asyncHandler(async (req, res) => {
+  const profile = await prisma.profile.findUnique({
+    where: { id: req.user.id },
+    select: { telegramChatId: true },
+  });
+  const targetChatId = req.body.telegramChatId || profile?.telegramChatId;
+  if (!targetChatId) {
+    throw new AppError('Isi atau deteksi Telegram Chat ID Anda terlebih dahulu.', 400, 'TELEGRAM_CHAT_ID_REQUIRED');
+  }
+
+  const log = await sendTelegramMessage({
+    userId: req.user.id,
+    chatId: String(targetChatId).trim(),
+    eventType: 'SELLER_TEST',
+    message: `🔔 <b>[FerryMarket] Tes Notifikasi Seller</b>\n\nHalo Seller <b>${req.user.sellerProfile.storeName}</b>! Notifikasi Telegram otomatis Anda sudah aktif dan berfungsi normal.`,
+  });
+
+  if (log?.status !== 'SENT') {
+    throw new AppError(log?.errorMessage || 'Gagal mengirim pesan uji Telegram.', 400, 'TELEGRAM_SEND_FAILED');
+  }
+
+  res.json({
+    success: true,
+    message: `Pesan uji berhasil dikirim ke Telegram Chat ID ${targetChatId}!`,
+    data: log,
+  });
 });
 
 // POST /api/sellers/media (Upload logo or banner)
@@ -603,6 +702,8 @@ module.exports = {
   getSellerDashboard,
   getStoreSettings,
   updateStoreSettings,
+  detectSellerTelegram,
+  testSellerTelegram,
   uploadStoreMedia,
   listSellerProducts,
   createSellerProduct,

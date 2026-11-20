@@ -1,5 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Upload, Save } from 'lucide-react';
+import {
+  Upload,
+  Save,
+  Send,
+  Sparkles,
+  CheckCircle2,
+  AlertTriangle,
+  ExternalLink,
+  BellRing,
+} from 'lucide-react';
 import api, { getErrorMessage } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -11,6 +20,8 @@ export default function SellerSettingsPage() {
   const [form, setForm] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [detectingTg, setDetectingTg] = useState(false);
+  const [testingTg, setTestingTg] = useState(false);
 
   useEffect(() => {
     api
@@ -27,7 +38,7 @@ export default function SellerSettingsPage() {
       const res = await api.put('/sellers/settings', form);
       setForm(res.data.data);
       await refreshUser();
-      toast.success('Pengaturan toko berhasil disimpan.');
+      toast.success(res.data.message || 'Pengaturan toko berhasil disimpan.');
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -45,23 +56,162 @@ export default function SellerSettingsPage() {
       const res = await api.post('/sellers/media', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setForm(res.data.data);
+      setForm((prev) => ({ ...prev, ...res.data.data }));
       toast.success(`${type === 'banner' ? 'Banner' : 'Logo'} toko berhasil diunggah.`);
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
   };
 
+  const handleDetectTelegram = async () => {
+    setDetectingTg(true);
+    try {
+      const res = await api.post('/sellers/telegram/detect');
+      setForm((prev) => ({ ...prev, telegramChatId: res.data.data.chatId }));
+      await refreshUser();
+      toast.success(res.data.message);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setDetectingTg(false);
+    }
+  };
+
+  const handleTestTelegram = async () => {
+    setTestingTg(true);
+    try {
+      const res = await api.post('/sellers/telegram/test', {
+        telegramChatId: form?.telegramChatId,
+      });
+      toast.success(res.data.message);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setTestingTg(false);
+    }
+  };
+
   if (loading || !form) return <LoadingState message="Memuat pengaturan toko..." />;
+
+  const bot = form.telegramBot || {};
+  const hasChatId = Boolean(form.telegramChatId && String(form.telegramChatId).trim());
 
   return (
     <div className="max-w-3xl space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-extrabold text-navy-900">Pengaturan Toko</h2>
-          <p className="text-sm text-slate-500">Perbarui identitas toko, lokasi, dan rekening bank pencairan.</p>
+          <h2 className="text-2xl font-extrabold text-navy-900">Pengaturan Toko & Notifikasi</h2>
+          <p className="text-sm text-slate-500">
+            Atur notifikasi Telegram otomatis, identitas toko, lokasi, dan rekening bank pencairan.
+          </p>
         </div>
         <StatusBadge status={form.verificationStatus} />
+      </div>
+
+      {/* Automatic Telegram Seller Notification Setup */}
+      <div className="card border-sky-200 bg-gradient-to-br from-sky-50/70 via-white to-white p-6 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500 text-white shadow-sm">
+              <BellRing className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-navy-900">
+                Notifikasi Telegram Otomatis Seller
+              </h3>
+              <p className="text-xs text-slate-500">
+                Terima notif otomatis ke Telegram HP saat ada pesanan baru, bukti transfer, pembayaran disetujui, scan QR, dan chat pembeli.
+              </p>
+            </div>
+          </div>
+
+          {bot.configured ? (
+            hasChatId ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Aktif ({form.telegramChatId})
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">
+                <AlertTriangle className="h-3.5 w-3.5" /> Bot Siap — Hubungkan Chat ID
+              </span>
+            )
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
+              Bot Belum Dikonfigurasi Admin
+            </span>
+          )}
+        </div>
+
+        {bot.configured && (
+          <>
+            <ol className="list-decimal space-y-1 pl-5 text-xs text-slate-600">
+              <li>
+                Klik tombol <strong>Buka Bot Telegram {bot.username ? `@${bot.username}` : ''}</strong> di bawah, lalu tekan tombol <strong>START</strong> di aplikasi Telegram Anda.
+              </li>
+              <li>
+                Kembali ke halaman ini lalu klik <strong>Deteksi & Simpan Chat ID Otomatis</strong>.
+              </li>
+              <li>
+                Selesai! Anda bisa langsung klik <strong>Tes Kirim Telegram</strong> untuk melihat notifikasi masuk ke HP Anda.
+              </li>
+            </ol>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {bot.link && (
+                <a
+                  href={bot.link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-sky-700"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> 1. Buka @{bot.username} & Klik START
+                </a>
+              )}
+              <button
+                type="button"
+                disabled={detectingTg}
+                onClick={handleDetectTelegram}
+                className="btn-primary py-2 text-xs"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                {detectingTg ? 'Mendeteksi...' : '2. Deteksi & Simpan Chat ID Otomatis'}
+              </button>
+              <button
+                type="button"
+                disabled={testingTg || !hasChatId}
+                onClick={handleTestTelegram}
+                className="btn-navy py-2 text-xs"
+              >
+                <Send className="h-3.5 w-3.5" />
+                {testingTg ? 'Mengirim...' : '3. Tes Kirim Telegram'}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 pt-1 sm:grid-cols-12">
+              <div className="sm:col-span-8">
+                <label className="mb-1 block text-xs font-semibold text-slate-700">
+                  Telegram Chat ID Seller (Otomatis terisi atau masukkan manual)
+                </label>
+                <input
+                  value={form.telegramChatId || ''}
+                  onChange={(e) => setForm({ ...form, telegramChatId: e.target.value })}
+                  placeholder="Contoh: 123456789"
+                  className="input-field py-2 text-xs font-mono"
+                />
+              </div>
+              <div className="flex items-end sm:col-span-4">
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={handleSave}
+                  className="btn-outline w-full py-2 text-xs"
+                >
+                  <Save className="h-3.5 w-3.5" /> Simpan Chat ID
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Media Uploads */}

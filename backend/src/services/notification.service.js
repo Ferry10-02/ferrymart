@@ -231,6 +231,57 @@ const sendWhatsAppMessage = async ({ userId = null, phone, eventType, message, m
   }
 };
 
+const escapeHtml = (str) =>
+  String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+const getTelegramBotInfo = async () => {
+  if (!env.telegram.isConfigured) {
+    return { configured: false, username: null, firstName: null, link: null };
+  }
+  const cached = getCache('telegram:bot_info');
+  if (cached) return cached;
+
+  try {
+    const resp = await axios.get(`https://api.telegram.org/bot${env.telegram.botToken}/getMe`, {
+      timeout: 8000,
+    });
+    const r = resp.data?.result || {};
+    const info = {
+      configured: true,
+      username: r.username || null,
+      firstName: r.first_name || 'FerryMarket Bot',
+      link: r.username ? `https://t.me/${r.username}` : null,
+    };
+    setCache('telegram:bot_info', info, 300000);
+    return info;
+  } catch {
+    return { configured: true, username: null, firstName: 'FerryMarket Bot', link: null };
+  }
+};
+
+const detectRecentTelegramChats = async () => {
+  if (!env.telegram.isConfigured) return [];
+  const resp = await axios.get(`https://api.telegram.org/bot${env.telegram.botToken}/getUpdates`, {
+    timeout: 10000,
+  });
+  const chats = new Map();
+  for (const u of resp.data?.result || []) {
+    const msg = u.message || u.edited_message || u.my_chat_member;
+    if (msg?.chat?.id) {
+      chats.set(String(msg.chat.id), {
+        chatId: String(msg.chat.id),
+        username: msg.chat.username || null,
+        firstName: [msg.chat.first_name, msg.chat.last_name].filter(Boolean).join(' ') || msg.chat.title || 'Telegram User',
+        lastText: msg.text || null,
+      });
+    }
+  }
+  return Array.from(chats.values()).reverse();
+};
+
 const sendTelegramMessage = async ({ userId = null, chatId, eventType, message, metadata = {} }) => {
   if (!chatId) return null;
 
@@ -345,12 +396,16 @@ const notifyUser = async ({
       });
     }
 
+    const tgHtml = `🔔 <b>[${escapeHtml(env.appName)}] ${escapeHtml(title)}</b>\n\n${escapeHtml(body)}${
+      linkSuffix ? `\n\n🔗 ${escapeHtml(linkSuffix.trim())}` : ''
+    }`;
+
     if (settings.telegram_enabled && user?.telegramChatId) {
       await sendTelegramMessage({
         userId: user.id,
         chatId: user.telegramChatId,
         eventType,
-        message: `<b>${title}</b>\n${body}`,
+        message: tgHtml,
         metadata: data,
       });
     }
@@ -371,7 +426,9 @@ const notifyUser = async ({
           userId: null,
           chatId: env.telegram.adminChatId,
           eventType,
-          message: `<b>[ADMIN ${env.appName}] ${title}</b>\n${body}`,
+          message: `🔔 <b>[ADMIN ${escapeHtml(env.appName)}] ${escapeHtml(title)}</b>\n\n${escapeHtml(body)}${
+            linkSuffix ? `\n\n🔗 ${escapeHtml(linkSuffix.trim())}` : ''
+          }`,
           metadata: data,
         });
       }
@@ -387,6 +444,8 @@ const notifyUser = async ({
 module.exports = {
   attachSocketIO,
   getIntegrationStatus,
+  getTelegramBotInfo,
+  detectRecentTelegramChats,
   sendWhatsAppMessage,
   sendTelegramMessage,
   notifyUser,

@@ -55,7 +55,15 @@ const uploadPaymentProof = asyncHandler(async (req, res) => {
 
   const payment = await prisma.payment.findUnique({
     where: { orderId },
-    include: { order: true },
+    include: {
+      order: {
+        include: {
+          sellerOrders: {
+            include: { seller: { select: { id: true, userId: true, storeName: true } } },
+          },
+        },
+      },
+    },
   });
 
   if (!payment || payment.order.buyerId !== req.user.id) {
@@ -117,6 +125,19 @@ const uploadPaymentProof = asyncHandler(async (req, res) => {
     data: { orderId, orderNumber: payment.order.orderNumber, paymentId: payment.id },
     notifyAdminExternal: true,
   });
+
+  // Also notify involved Seller(s) (In-App + Telegram/WhatsApp) that buyer uploaded payment proof
+  for (const so of payment.order.sellerOrders || []) {
+    if (so.seller?.userId && so.seller.userId !== req.user.id) {
+      notifyUser({
+        userId: so.seller.userId,
+        eventType: NOTIFICATION_EVENTS.PAYMENT_UPLOADED,
+        title: `Bukti Bayar Diunggah: ${so.subOrderNumber}`,
+        body: `Pembeli ${req.user.fullName} telah mengunggah bukti transfer ${formatIDR(transferAmount)} (${senderBank}) untuk pesanan di toko ${so.seller.storeName}. Menunggu verifikasi Admin.`,
+        data: { orderId, orderNumber: payment.order.orderNumber, sellerOrderId: so.id },
+      });
+    }
+  }
 
   // Also notify all Admins in-app
   const admins = await prisma.userRole.findMany({ where: { role: 'ADMIN' }, select: { userId: true } });
