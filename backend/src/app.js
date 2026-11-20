@@ -43,13 +43,26 @@ const allowedOrigins = env.corsOrigin.split(',').map((o) => o.trim());
 const PRIVATE_LAN_ORIGIN_RE =
   /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/;
 
+const isOriginAllowed = (origin) => {
+  if (!origin) return true;
+  for (const pattern of allowedOrigins) {
+    if (!pattern) continue;
+    if (pattern === '*' || pattern === origin) return true;
+    if (pattern.includes('*')) {
+      const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+      if (regex.test(origin)) return true;
+    }
+  }
+  if (env.nodeEnv !== 'production' && PRIVATE_LAN_ORIGIN_RE.test(origin)) {
+    return true;
+  }
+  return false;
+};
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      if (env.nodeEnv !== 'production' && PRIVATE_LAN_ORIGIN_RE.test(origin)) {
+      if (isOriginAllowed(origin)) {
         return callback(null, true);
       }
       return callback(new Error('Origin tidak diizinkan oleh kebijakan CORS.'));

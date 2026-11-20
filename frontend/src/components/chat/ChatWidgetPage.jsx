@@ -54,6 +54,24 @@ export default function ChatWorkspace({ title = 'Pesan Realtime' }) {
     };
   }, [socket, activeConvId]);
 
+  // Automatic REST polling fallback when WebSocket is unavailable (e.g. Vercel Serverless deploy)
+  useEffect(() => {
+    if (isSocketOnline || !activeConvId) return;
+    const poll = setInterval(async () => {
+      try {
+        const [msgRes, convRes] = await Promise.all([
+          api.get(`/chat/conversations/${activeConvId}/messages`),
+          api.get('/chat/conversations'),
+        ]);
+        setMessages(msgRes.data.data || []);
+        setConversations(convRes.data.data || []);
+      } catch {
+        // ignore transient poll error
+      }
+    }, 3500);
+    return () => clearInterval(poll);
+  }, [isSocketOnline, activeConvId]);
+
   const loadConversations = useCallback(async () => {
     try {
       const res = await api.get('/chat/conversations');
@@ -225,7 +243,7 @@ export default function ChatWorkspace({ title = 'Pesan Realtime' }) {
               isSocketOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
             }`}
           />
-          {isSocketOnline ? 'Realtime Aktif' : 'Menghubungkan...'}
+          {isSocketOnline ? 'Realtime Aktif' : 'Live Sync Aktif'}
         </span>
       </div>
 

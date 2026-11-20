@@ -21,7 +21,16 @@ export function SocketProvider({ children }) {
       return;
     }
 
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || window.location.origin;
+    const explicitSocketUrl = import.meta.env.VITE_SOCKET_URL;
+    const isLocalOrLan = /^(localhost|127\.0\.0\.1|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(
+      window.location.hostname
+    );
+    // On serverless hosts (e.g. Vercel without dedicated socket server), skip WebSocket & use REST Live Sync cleanly
+    if (!explicitSocketUrl && !isLocalOrLan) {
+      return;
+    }
+
+    const socketUrl = explicitSocketUrl || window.location.origin;
     const s = io(socketUrl, {
       auth: { token },
       transports: ['websocket', 'polling'],

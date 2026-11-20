@@ -5,11 +5,18 @@ const QRCode = require('qrcode');
 let Client = null;
 let LocalAuth = null;
 
-try {
-  ({ Client, LocalAuth } = require('whatsapp-web.js'));
-} catch {
-  // Package not installed yet
-}
+// Lazy-load whatsapp-web.js only when explicitly needed so serverless deploys (Vercel) don't bundle Puppeteer
+const loadWhatsAppWebPkg = () => {
+  if (Client && LocalAuth) return true;
+  if (process.env.VERCEL === '1') return false;
+  try {
+    const pkgName = 'whatsapp-web.js';
+    ({ Client, LocalAuth } = require(pkgName));
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const CHROME_CANDIDATES = [
   process.env.PUPPETEER_EXECUTABLE_PATH,
@@ -62,9 +69,12 @@ const getStatus = () => ({
 });
 
 const initializeWhatsAppWeb = async () => {
-  if (!Client) {
+  if (!loadWhatsAppWebPkg()) {
     state.status = 'ERROR';
-    state.lastError = 'Paket whatsapp-web.js belum terpasang di backend.';
+    state.lastError =
+      process.env.VERCEL === '1'
+        ? 'Mode whatsapp-web tidak didukung di Vercel Serverless. Gunakan WHATSAPP_PROVIDER=fonnte atau Telegram Bot API.'
+        : 'Paket whatsapp-web.js belum terpasang di backend.';
     emitState();
     return getStatus();
   }
