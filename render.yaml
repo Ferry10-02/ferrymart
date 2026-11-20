@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: ferrymarket-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: WHATSAPP_PROVIDER
+        value: fonnte
+      - key: BCRYPT_SALT_ROUNDS
+        value: "10"

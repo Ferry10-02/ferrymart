@@ -1,0 +1,11 @@
+{
+  "watch": ["src", ".env"],
+  "ext": "js,json,env",
+  "ignore": [
+    ".wwebjs_auth/*",
+    ".wwebjs_cache/*",
+    "uploads/*",
+    "node_modules/*"
+  ],
+  "delay": "500"
+}
