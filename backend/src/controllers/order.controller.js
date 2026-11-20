@@ -8,7 +8,54 @@ const { formatIDR } = require('../utils/sanitize');
 // Short 5-second dedup cache so React StrictMode or double-tap doesn't send duplicate WA messages
 const recentQrScanNotify = new Map();
 
-// GET /api/orders (Buyer's own orders)
+// Helper: compute live Shopee-style status counts for a buyer
+const getBuyerOrderCounts = async (buyerId) => {
+  const [groupedOrders, beriPenilaian, wishlistCount, unreadNotifications] = await Promise.all([
+    prisma.order.groupBy({
+      by: ['status'],
+      where: { buyerId },
+      _count: { _all: true },
+    }),
+    prisma.orderItem.count({
+      where: {
+        review: null,
+        sellerOrder: {
+          status: { in: ['DELIVERED', 'COMPLETED'] },
+          order: { buyerId },
+        },
+      },
+    }),
+    prisma.wishlist.count({ where: { userId: buyerId } }),
+    prisma.notification.count({ where: { userId: buyerId, isRead: false } }),
+  ]);
+
+  const byStatus = {};
+  let total = 0;
+  for (const row of groupedOrders) {
+    byStatus[row.status] = row._count._all;
+    total += row._count._all;
+  }
+
+  return {
+    total,
+    belumBayar: (byStatus.PENDING_PAYMENT || 0) + (byStatus.WAITING_VERIFICATION || 0),
+    dikemas: (byStatus.PAID || 0) + (byStatus.CONFIRMED || 0) + (byStatus.PROCESSING || 0),
+    dikirim: (byStatus.SHIPPED || 0) + (byStatus.DELIVERED || 0),
+    beriPenilaian,
+    selesai: byStatus.COMPLETED || 0,
+    dibatalkan: (byStatus.CANCELLED || 0) + (byStatus.REFUNDED || 0),
+    wishlistCount,
+    unreadNotifications,
+  };
+};
+
+// GET /api/orders/summary (Buyer's live Shopee-style status counts)
+const getMyOrderSummary = asyncHandler(async (req, res) => {
+  const counts = await getBuyerOrderCounts(req.user.id);
+  res.json({ success: true, data: counts });
+});
+
+// GET /api/orders (Buyer's own orders with Shopee-style group filter support)
 const listMyOrders = asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 10 } = req.query;
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
@@ -16,10 +63,29 @@ const listMyOrders = asyncHandler(async (req, res) => {
 
   const where = { buyerId: req.user.id };
   if (status && status !== 'ALL') {
-    where.status = status;
+    if (status === 'BELUM_BAYAR') {
+      where.status = { in: ['PENDING_PAYMENT', 'WAITING_VERIFICATION'] };
+    } else if (status === 'DIKEMAS') {
+      where.status = { in: ['PAID', 'CONFIRMED', 'PROCESSING'] };
+    } else if (status === 'DIKIRIM') {
+      where.status = { in: ['SHIPPED', 'DELIVERED'] };
+    } else if (status === 'BERI_PENILAIAN') {
+      where.sellerOrders = {
+        some: {
+          status: { in: ['DELIVERED', 'COMPLETED'] },
+          items: { some: { review: null } },
+        },
+      };
+    } else if (status === 'SELESAI') {
+      where.status = 'COMPLETED';
+    } else if (status === 'DIBATALKAN') {
+      where.status = { in: ['CANCELLED', 'REFUNDED'] };
+    } else {
+      where.status = status;
+    }
   }
 
-  const [items, total] = await Promise.all([
+  const [items, total, counts] = await Promise.all([
     prisma.order.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -36,7 +102,8 @@ const listMyOrders = asyncHandler(async (req, res) => {
             shipment: true,
             items: {
               include: {
-                review: { select: { id: true, rating: true } },
+                product: { select: { id: true, slug: true } },
+                review: { select: { id: true, rating: true, comment: true } },
               },
             },
           },
@@ -44,12 +111,14 @@ const listMyOrders = asyncHandler(async (req, res) => {
       },
     }),
     prisma.order.count({ where }),
+    getBuyerOrderCounts(req.user.id),
   ]);
 
   res.json({
     success: true,
     data: {
       items,
+      counts,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -400,6 +469,7 @@ const cancelOrder = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  getMyOrderSummary,
   listMyOrders,
   getOrderDetail,
   getOrderByQr,

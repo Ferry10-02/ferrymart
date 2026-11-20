@@ -12,10 +12,14 @@ import {
   XCircle,
   ExternalLink,
   MessageSquare,
+  Copy,
+  Clock,
 } from 'lucide-react';
 import api, { getErrorMessage } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
+import { useSocket } from '../../context/SocketContext';
 import { LoadingState, ErrorState, StatusBadge, ConfirmModal } from '../../components/common/UIStates';
+import OrderProgressStepper from '../../components/marketplace/OrderProgressStepper';
 import QrCodeModal from '../../components/qr/QrCodeModal';
 import { formatIDR, formatDate } from '../../utils/format';
 
@@ -23,6 +27,7 @@ export default function OrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { refreshOrderSummary } = useSocket() || {};
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -70,6 +75,12 @@ export default function OrderDetailPage() {
     loadOrder();
   }, [loadOrder]);
 
+  useEffect(() => {
+    const onOrderUpdated = () => loadOrder();
+    window.addEventListener('fm:order-updated', onOrderUpdated);
+    return () => window.removeEventListener('fm:order-updated', onOrderUpdated);
+  }, [loadOrder]);
+
   const handleUploadProof = async (e) => {
     e.preventDefault();
     if (!proofFile) return toast.error('Pilih gambar bukti transfer terlebih dahulu.');
@@ -87,7 +98,7 @@ export default function OrderDetailPage() {
       });
       toast.success(res.data.message);
       setProofFile(null);
-      await loadOrder();
+      await Promise.all([loadOrder(), refreshOrderSummary?.()]);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -99,7 +110,7 @@ export default function OrderDetailPage() {
     try {
       const res = await api.post(`/orders/seller-orders/${sellerOrderId}/complete`);
       toast.success(res.data.message);
-      await loadOrder();
+      await Promise.all([loadOrder(), refreshOrderSummary?.()]);
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
@@ -111,7 +122,7 @@ export default function OrderDetailPage() {
       const res = await api.post(`/orders/${data.order.id}/cancel`);
       toast.success(res.data.message);
       setCancelOpen(false);
-      await loadOrder();
+      await Promise.all([loadOrder(), refreshOrderSummary?.()]);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -133,7 +144,7 @@ export default function OrderDetailPage() {
       toast.success('Terima kasih! Ulasan Anda berhasil dikirim.');
       setReviewItem(null);
       setReviewComment('');
-      await loadOrder();
+      await Promise.all([loadOrder(), refreshOrderSummary?.()]);
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -198,6 +209,18 @@ export default function OrderDetailPage() {
             <StatusBadge status={order.status} />
             {payment && <StatusBadge status={payment.status} />}
           </div>
+        </div>
+
+        {/* Live Order Progress Stepper */}
+        <div className="mt-5 border-t border-slate-100 pt-4">
+          <OrderProgressStepper
+            status={order.status}
+            hasUnreviewedItems={order.sellerOrders?.some(
+              (so) =>
+                ['DELIVERED', 'COMPLETED'].includes(so.status) &&
+                so.items?.some((item) => !item.review)
+            )}
+          />
         </div>
 
         <div className="mt-5 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 md:grid-cols-2">
@@ -408,28 +431,65 @@ export default function OrderDetailPage() {
               ))}
             </div>
 
-            {/* Shipment Info & Buyer Confirm Delivery */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-5 py-3.5 text-xs">
-              <div className="flex items-center gap-2 text-slate-600">
-                <Truck className="h-4 w-4 text-primary-500" />
-                <span>
-                  Kurir: <strong>{so.shipment?.courierName || so.shippingMethod?.name}</strong>
+            {/* Shipment Info, Live Tracking Timeline & Buyer Confirm Delivery */}
+            <div className="border-t border-slate-100 bg-slate-50 px-5 py-4 text-xs space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2 text-slate-600">
+                  <Truck className="h-4 w-4 text-primary-500" />
+                  <span>
+                    Kurir: <strong>{so.shipment?.courierName || so.shippingMethod?.name}</strong>
+                    {so.shipment?.trackingNumber && (
+                      <>
+                        {' '}• No. Resi:{' '}
+                        <strong className="font-mono text-navy-900">{so.shipment.trackingNumber}</strong>
+                      </>
+                    )}
+                  </span>
                   {so.shipment?.trackingNumber && (
-                    <>
-                      {' '}• No. Resi:{' '}
-                      <strong className="font-mono text-navy-900">{so.shipment.trackingNumber}</strong>
-                    </>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(so.shipment.trackingNumber);
+                        toast.info('Nomor resi disalin!');
+                      }}
+                      className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+                    >
+                      <Copy className="h-3 w-3" /> Salin Resi
+                    </button>
                   )}
-                </span>
+                </div>
+                {['SHIPPED', 'DELIVERED'].includes(so.status) && (
+                  <button
+                    type="button"
+                    onClick={() => handleConfirmReceived(so.id)}
+                    className="btn-primary px-3.5 py-1.5 text-xs"
+                  >
+                    <CheckCircle2 className="h-4 w-4" /> Pesanan Diterima (Selesai)
+                  </button>
+                )}
               </div>
-              {['SHIPPED', 'DELIVERED'].includes(so.status) && (
-                <button
-                  type="button"
-                  onClick={() => handleConfirmReceived(so.id)}
-                  className="btn-primary px-3.5 py-1.5 text-xs"
-                >
-                  <CheckCircle2 className="h-4 w-4" /> Pesanan Diterima (Selesai)
-                </button>
+
+              {Array.isArray(so.shipment?.trackingHistory) && so.shipment.trackingHistory.length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                  <p className="mb-2.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-navy-900">
+                    <Clock className="h-3.5 w-3.5 text-primary-500" /> Riwayat Pengiriman
+                  </p>
+                  <div className="space-y-2.5 border-l-2 border-primary-200 pl-3.5">
+                    {[...so.shipment.trackingHistory].reverse().map((ev, i) => (
+                      <div key={i} className="relative">
+                        <span
+                          className={`absolute -left-[19px] top-1 h-2.5 w-2.5 rounded-full ${
+                            i === 0 ? 'bg-primary-500 ring-4 ring-primary-100' : 'bg-slate-300'
+                          }`}
+                        />
+                        <p className="font-semibold text-navy-900">{ev.description || ev.status}</p>
+                        {ev.timestamp && (
+                          <p className="text-[11px] text-slate-400">{formatDate(ev.timestamp)}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           </div>

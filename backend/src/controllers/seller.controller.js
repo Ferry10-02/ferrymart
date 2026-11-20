@@ -561,9 +561,23 @@ const listSellerOrders = asyncHandler(async (req, res) => {
   const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 15));
 
   const where = { sellerId };
-  if (status && status !== 'ALL') where.status = status;
+  if (status && status !== 'ALL') {
+    if (status === 'BELUM_BAYAR') {
+      where.status = { in: ['PENDING_PAYMENT', 'WAITING_VERIFICATION'] };
+    } else if (status === 'DIKEMAS') {
+      where.status = { in: ['PAID', 'CONFIRMED', 'PROCESSING'] };
+    } else if (status === 'DIKIRIM') {
+      where.status = { in: ['SHIPPED', 'DELIVERED'] };
+    } else if (status === 'SELESAI') {
+      where.status = 'COMPLETED';
+    } else if (status === 'DIBATALKAN') {
+      where.status = { in: ['CANCELLED', 'REFUNDED'] };
+    } else {
+      where.status = status;
+    }
+  }
 
-  const [items, total] = await Promise.all([
+  const [items, total, grouped] = await Promise.all([
     prisma.sellerOrder.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -585,12 +599,34 @@ const listSellerOrders = asyncHandler(async (req, res) => {
       },
     }),
     prisma.sellerOrder.count({ where }),
+    prisma.sellerOrder.groupBy({
+      by: ['status'],
+      where: { sellerId },
+      _count: { _all: true },
+    }),
   ]);
+
+  const byStatus = {};
+  let allTotal = 0;
+  for (const row of grouped) {
+    byStatus[row.status] = row._count._all;
+    allTotal += row._count._all;
+  }
+
+  const counts = {
+    total: allTotal,
+    belumBayar: (byStatus.PENDING_PAYMENT || 0) + (byStatus.WAITING_VERIFICATION || 0),
+    dikemas: (byStatus.PAID || 0) + (byStatus.CONFIRMED || 0) + (byStatus.PROCESSING || 0),
+    dikirim: (byStatus.SHIPPED || 0) + (byStatus.DELIVERED || 0),
+    selesai: byStatus.COMPLETED || 0,
+    dibatalkan: (byStatus.CANCELLED || 0) + (byStatus.REFUNDED || 0),
+  };
 
   res.json({
     success: true,
     data: {
       items,
+      counts,
       pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) },
     },
   });

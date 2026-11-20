@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get('/', orderController.listMyOrders);
+router.get('/summary', orderController.getMyOrderSummary);
 router.get('/qr/:orderNumber', orderController.getOrderByQr);
 router.get('/:id', orderController.getOrderDetail);
 router.post('/seller-orders/:sellerOrderId/complete', orderController.confirmOrderReceived);

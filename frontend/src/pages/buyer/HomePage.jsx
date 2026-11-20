@@ -24,8 +24,16 @@ import {
   ShieldCheck,
   QrCode,
   MessageSquare,
+  Wallet,
+  Package,
+  Truck,
+  Star,
+  Heart,
+  Store,
 } from 'lucide-react';
 import api, { getErrorMessage } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../context/SocketContext';
 import ProductCard from '../../components/marketplace/ProductCard';
 import { LoadingState, ErrorState, EmptyState } from '../../components/common/UIStates';
 
@@ -85,6 +93,8 @@ function ProductSection({ title, icon: Icon, iconColor = 'text-primary-500', pro
 }
 
 export default function HomePage() {
+  const { isAuthenticated, hasRole } = useAuth();
+  const { orderSummary } = useSocket() || {};
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -235,6 +245,84 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* Shopee-Style Quick Feature Bar & Connected Order Status Strip */}
+      <section className="mt-5 space-y-3">
+        <div className="card grid grid-cols-3 gap-2 p-3 sm:grid-cols-6 sm:p-4">
+          {[
+            { to: '/products?flash_sale=true', label: 'Flash Sale', icon: Zap, bg: 'bg-orange-100 text-orange-600' },
+            { to: '/products?discounted=true', label: 'Diskon Xtra', icon: Tag, bg: 'bg-emerald-100 text-emerald-600' },
+            { to: '/products?sort=bestselling', label: 'Terlaris', icon: Flame, bg: 'bg-rose-100 text-rose-600' },
+            { to: isAuthenticated ? '/orders' : '/login', label: 'Pesanan Saya', icon: Package, bg: 'bg-sky-100 text-sky-600' },
+            { to: isAuthenticated ? '/wishlist' : '/login', label: 'Favorit', icon: Heart, bg: 'bg-pink-100 text-pink-600' },
+            {
+              to: hasRole('SELLER') ? '/seller' : isAuthenticated ? '/profile' : '/register?role=SELLER',
+              label: hasRole('SELLER') ? 'Seller Center' : 'Buka Toko',
+              icon: Store,
+              bg: 'bg-indigo-100 text-indigo-600',
+            },
+          ].map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.label}
+                to={item.to}
+                className="group flex flex-col items-center rounded-xl py-2 text-center transition hover:bg-slate-50"
+              >
+                <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${item.bg} transition group-hover:scale-105`}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <span className="mt-1.5 text-[11px] font-bold text-slate-700 group-hover:text-primary-600">
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+
+        {isAuthenticated && (
+          <div className="card overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-orange-50 to-white px-4 py-2.5">
+              <span className="text-xs font-extrabold text-navy-900">Status Pesanan Saya</span>
+              <Link
+                to="/orders"
+                className="inline-flex items-center gap-0.5 text-xs font-semibold text-primary-600 hover:underline"
+              >
+                Lihat Semua <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            <div className="grid grid-cols-4 gap-2 px-2 py-3 sm:px-6">
+              {[
+                { label: 'Belum Bayar', count: orderSummary?.belumBayar || 0, icon: Wallet, to: '/orders?tab=BELUM_BAYAR' },
+                { label: 'Dikemas', count: orderSummary?.dikemas || 0, icon: Package, to: '/orders?tab=DIKEMAS' },
+                { label: 'Dikirim', count: orderSummary?.dikirim || 0, icon: Truck, to: '/orders?tab=DIKIRIM' },
+                { label: 'Beri Penilaian', count: orderSummary?.beriPenilaian || 0, icon: Star, to: '/orders?tab=BERI_PENILAIAN' },
+              ].map((s) => {
+                const Icon = s.icon;
+                return (
+                  <Link
+                    key={s.label}
+                    to={s.to}
+                    className="group flex flex-col items-center rounded-xl py-1.5 text-center transition hover:bg-orange-50/70"
+                  >
+                    <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-navy-800 transition group-hover:bg-primary-100 group-hover:text-primary-600">
+                      <Icon className="h-4.5 w-4.5" />
+                      {s.count > 0 && (
+                        <span className="absolute -right-1.5 -top-1.5 flex h-4.5 min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-[#EE4D2D] px-1 text-[9px] font-extrabold text-white">
+                          {s.count > 99 ? '99+' : s.count}
+                        </span>
+                      )}
+                    </div>
+                    <span className="mt-1 text-[11px] font-semibold text-slate-700 group-hover:text-primary-600">
+                      {s.label}
+                    </span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Categories Grid (14 Initial Categories) */}

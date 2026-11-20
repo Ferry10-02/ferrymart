@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Search,
   ShoppingCart,
@@ -13,6 +13,8 @@ import {
   Menu,
   X,
   Package,
+  Home,
+  LayoutGrid,
 } from 'lucide-react';
 import Logo from '../components/common/Logo';
 import { useAuth } from '../context/AuthContext';
@@ -22,8 +24,13 @@ import { useSocket } from '../context/SocketContext';
 export default function MarketplaceLayout() {
   const { user, isAuthenticated, hasRole, logout } = useAuth();
   const { cart } = useCart();
-  const { unreadNotifications } = useSocket() || {};
+  const { unreadNotifications, orderSummary } = useSocket() || {};
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const activeOrderBadge =
+    (orderSummary?.belumBayar || 0) + (orderSummary?.dikemas || 0) + (orderSummary?.dikirim || 0);
+  const reviewBadge = orderSummary?.beriPenilaian || 0;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -262,12 +269,12 @@ export default function MarketplaceLayout() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1">
+      <main className="flex-1 pb-20 md:pb-0">
         <Outlet />
       </main>
 
       {/* Footer */}
-      <footer className="mt-16 border-t border-slate-200 bg-navy-900 text-slate-300">
+      <footer className="mt-16 hidden border-t border-slate-200 bg-navy-900 text-slate-300 md:block">
         <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-12 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <Logo dark />
@@ -304,6 +311,59 @@ export default function MarketplaceLayout() {
           © {new Date().getFullYear()} FerryMarket. Seluruh hak cipta dilindungi.
         </div>
       </footer>
+
+      {/* Shopee-Style Mobile Bottom Navigation Bar */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 shadow-[0_-4px_20px_rgba(15,23,42,0.06)] backdrop-blur-md md:hidden">
+        <div className="mx-auto grid max-w-lg grid-cols-5">
+          {[
+            { to: '/', label: 'Beranda', icon: Home, match: (p) => p === '/', badge: 0 },
+            { to: '/products', label: 'Produk', icon: LayoutGrid, match: (p) => p.startsWith('/products'), badge: 0 },
+            {
+              to: '/orders',
+              label: 'Pesanan',
+              icon: Package,
+              match: (p) => p.startsWith('/orders'),
+              badge: isAuthenticated ? activeOrderBadge : 0,
+            },
+            {
+              to: '/notifications',
+              label: 'Notifikasi',
+              icon: Bell,
+              match: (p) => p.startsWith('/notifications'),
+              badge: isAuthenticated ? unreadNotifications || 0 : 0,
+            },
+            {
+              to: isAuthenticated ? '/profile' : '/login',
+              label: 'Saya',
+              icon: User,
+              match: (p) => p.startsWith('/profile'),
+              badge: isAuthenticated ? reviewBadge : 0,
+            },
+          ].map((item) => {
+            const Icon = item.icon;
+            const active = item.match(location.pathname);
+            return (
+              <Link
+                key={item.label}
+                to={item.to}
+                className={`relative flex flex-col items-center justify-center py-2 text-[10px] font-semibold transition ${
+                  active ? 'text-primary-600' : 'text-slate-500 hover:text-navy-900'
+                }`}
+              >
+                <div className="relative">
+                  <Icon className={`h-5 w-5 ${active ? 'stroke-[2.4]' : 'stroke-[1.9]'}`} />
+                  {item.badge > 0 && (
+                    <span className="absolute -right-2 -top-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white shadow-xs">
+                      {item.badge > 99 ? '99+' : item.badge}
+                    </span>
+                  )}
+                </div>
+                <span className="mt-0.5">{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 }

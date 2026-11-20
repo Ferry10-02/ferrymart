@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import api, { getErrorMessage } from '../../services/api';
 import { useCart } from '../../context/CartContext';
+import { useSocket } from '../../context/SocketContext';
 import { useToast } from '../../context/ToastContext';
 import { LoadingState, EmptyState } from '../../components/common/UIStates';
 import { formatIDR } from '../../utils/format';
@@ -19,6 +20,7 @@ import { formatIDR } from '../../utils/format';
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { fetchCart } = useCart();
+  const { refreshOrderSummary } = useSocket() || {};
   const toast = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -131,7 +133,7 @@ export default function CheckoutPage() {
         sellerNotes,
         couponCode: appliedCoupon?.code || null,
       });
-      await fetchCart();
+      await Promise.all([fetchCart(), refreshOrderSummary?.()]);
       toast.success(res.data.message);
       navigate(`/orders/${res.data.data.id}`);
     } catch (err) {

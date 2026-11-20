@@ -1,15 +1,43 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Truck, CheckCircle2, PackageCheck, X, MessageSquare } from 'lucide-react';
+import {
+  Truck,
+  CheckCircle2,
+  PackageCheck,
+  X,
+  MessageSquare,
+  Wallet,
+  Package,
+  XCircle,
+  ListChecks,
+} from 'lucide-react';
 import api, { getErrorMessage } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { LoadingState, EmptyState, StatusBadge, Pagination } from '../../components/common/UIStates';
+import OrderProgressStepper from '../../components/marketplace/OrderProgressStepper';
 import { formatIDR, formatDate } from '../../utils/format';
+
+const SELLER_TABS = [
+  { key: 'ALL', label: 'Semua', countKey: 'total', icon: ListChecks },
+  { key: 'BELUM_BAYAR', label: 'Belum Bayar', countKey: 'belumBayar', icon: Wallet },
+  { key: 'DIKEMAS', label: 'Perlu Dikemas', countKey: 'dikemas', icon: Package },
+  { key: 'DIKIRIM', label: 'Dikirim', countKey: 'dikirim', icon: Truck },
+  { key: 'SELESAI', label: 'Selesai', countKey: 'selesai', icon: CheckCircle2 },
+  { key: 'DIBATALKAN', label: 'Dibatalkan', countKey: 'dibatalkan', icon: XCircle },
+];
 
 export default function SellerOrdersPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const [orders, setOrders] = useState([]);
+  const [counts, setCounts] = useState({
+    total: 0,
+    belumBayar: 0,
+    dikemas: 0,
+    dikirim: 0,
+    selesai: 0,
+    dibatalkan: 0,
+  });
   const [status, setStatus] = useState('ALL');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1 });
@@ -29,6 +57,9 @@ export default function SellerOrdersPage() {
     try {
       const res = await api.get('/sellers/orders', { params: { status, page, limit: 15 } });
       setOrders(res.data.data.items || []);
+      if (res.data.data.counts) {
+        setCounts(res.data.data.counts);
+      }
       setPagination(res.data.data.pagination || { page: 1, totalPages: 1 });
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -39,6 +70,13 @@ export default function SellerOrdersPage() {
 
   useEffect(() => {
     loadOrders();
+  }, [loadOrders]);
+
+  // Realtime refresh when buyer places order / admin approves payment / buyer confirms delivery
+  useEffect(() => {
+    const onOrderUpdated = () => loadOrders();
+    window.addEventListener('fm:order-updated', onOrderUpdated);
+    return () => window.removeEventListener('fm:order-updated', onOrderUpdated);
   }, [loadOrders]);
 
   const updateStatus = async (sellerOrderId, nextStatus) => {
@@ -92,32 +130,78 @@ export default function SellerOrdersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-extrabold text-navy-900">Daftar Pesanan & Pengiriman</h2>
+        <h2 className="text-2xl font-extrabold text-navy-900">Pesanan Toko & Pengiriman</h2>
         <p className="text-sm text-slate-500">
-          Konfirmasi pesanan yang sudah terverifikasi Admin, proses pengemasan, dan masukkan nomor resi pengiriman.
+          Terhubung langsung dengan halaman Pesanan Pembeli — ubah ke Dikemas atau input Resi Pengiriman dan status pembeli otomatis terupdate.
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {['ALL', 'PENDING_PAYMENT', 'WAITING_VERIFICATION', 'PAID', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'COMPLETED'].map(
-          (st) => (
+      {/* Shopee-Style Seller Order Status Summary */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {SELLER_TABS.slice(1, 5).map((t) => {
+          const Icon = t.icon;
+          const cnt = counts[t.countKey] || 0;
+          const active = status === t.key;
+          return (
             <button
-              key={st}
+              key={t.key}
               type="button"
               onClick={() => {
-                setStatus(st);
+                setStatus(t.key);
                 setPage(1);
               }}
-              className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                status === st
+              className={`card flex items-center justify-between p-4 text-left transition ${
+                active ? 'border-primary-500 bg-primary-50/70 ring-1 ring-primary-400' : 'hover:border-primary-200'
+              }`}
+            >
+              <div>
+                <p className="text-xs font-semibold text-slate-500">{t.label}</p>
+                <p className="mt-1 text-2xl font-extrabold text-navy-900">{cnt}</p>
+              </div>
+              <div
+                className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                  active ? 'bg-primary-500 text-white' : 'bg-slate-100 text-navy-800'
+                }`}
+              >
+                <Icon className="h-5 w-5" />
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Filter Pills with Live Counts */}
+      <div className="flex flex-wrap gap-2">
+        {SELLER_TABS.map((t) => {
+          const cnt = counts[t.countKey] || 0;
+          const active = status === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => {
+                setStatus(t.key);
+                setPage(1);
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                active
                   ? 'bg-primary-500 text-white'
                   : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
               }`}
             >
-              {st === 'ALL' ? 'Semua' : st}
+              <span>{t.label}</span>
+              {cnt > 0 && (
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-extrabold leading-none ${
+                    active ? 'bg-white text-primary-600' : 'bg-primary-100 text-primary-700'
+                  }`}
+                >
+                  {cnt}
+                </span>
+              )}
             </button>
-          )
-        )}
+          );
+        })}
       </div>
 
       {loading ? (
@@ -136,6 +220,11 @@ export default function SellerOrdersPage() {
                   {so.order?.payment && <StatusBadge status={so.order.payment.status} />}
                 </div>
                 <span className="text-xs text-slate-500">{formatDate(so.createdAt)}</span>
+              </div>
+
+              {/* Connected Visual Order Stepper */}
+              <div className="border-b border-slate-100 py-1">
+                <OrderProgressStepper status={so.status} compact />
               </div>
 
               <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -197,7 +286,7 @@ export default function SellerOrdersPage() {
                       onClick={() => updateStatus(so.id, 'CONFIRMED')}
                       className="btn-navy px-3 py-1.5 text-xs"
                     >
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Konfirmasi Pesanan
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Terima Pesanan
                     </button>
                   )}
                   {['PAID', 'CONFIRMED'].includes(so.status) && (
@@ -206,7 +295,7 @@ export default function SellerOrdersPage() {
                       onClick={() => updateStatus(so.id, 'PROCESSING')}
                       className="btn-outline px-3 py-1.5 text-xs"
                     >
-                      <PackageCheck className="h-3.5 w-3.5" /> Proses / Kemas
+                      <PackageCheck className="h-3.5 w-3.5" /> Kemas Pesanan
                     </button>
                   )}
                   {['PAID', 'CONFIRMED', 'PROCESSING', 'SHIPPED'].includes(so.status) && (
@@ -216,7 +305,7 @@ export default function SellerOrdersPage() {
                       className="btn-primary px-3 py-1.5 text-xs"
                     >
                       <Truck className="h-3.5 w-3.5" />
-                      {so.shipment ? 'Update Pengiriman / Resi' : 'Atur Pengiriman & Resi'}
+                      {so.shipment ? 'Update Pengiriman / Resi' : 'Kirim & Input Resi'}
                     </button>
                   )}
                 </div>
@@ -230,9 +319,9 @@ export default function SellerOrdersPage() {
       {/* Shipment Modal */}
       {shipModalOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/60 p-4">
-          <form onSubmit={handleSaveShipment} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+          <form onSubmit={handleSaveShipment} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-bold text-navy-900">Atur Pengiriman</h3>
+              <h3 className="text-lg font-bold text-navy-900">Atur Pengiriman & Resi</h3>
               <button type="button" onClick={() => setShipModalOrder(null)} className="text-slate-400">
                 <X className="h-5 w-5" />
               </button>
