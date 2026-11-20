@@ -1,9 +1,14 @@
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
 const QRCode = require('qrcode');
 
 let Client = null;
 let LocalAuth = null;
+
+const SESSION_CLIENT_ID = 'ferrymarket-bot';
+const AUTH_DIR = path.resolve(__dirname, '../../.wwebjs_auth');
+const SESSION_DIR = path.join(AUTH_DIR, `session-${SESSION_CLIENT_ID}`);
 
 // Lazy-load whatsapp-web.js only when explicitly needed so serverless deploys (Vercel) don't bundle Puppeteer
 const loadWhatsAppWebPkg = () => {
@@ -33,8 +38,56 @@ const findBrowserExecutable = () => {
   return undefined;
 };
 
+const killOrphanedSessionBrowsers = () =>
+  new Promise((resolve) => {
+    if (process.platform === 'win32') {
+      const psScript = `
+        Get-CimInstance Win32_Process |
+        Where-Object {
+          ($_.Name -eq 'chrome.exe' -or $_.Name -eq 'msedge.exe') -and
+          $_.CommandLine -like '*session-${SESSION_CLIENT_ID}*'
+        } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+      `;
+      execFile(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', psScript],
+        { timeout: 10000 },
+        () => resolve()
+      );
+    } else {
+      execFile('pkill', ['-f', `session-${SESSION_CLIENT_ID}`], { timeout: 5000 }, () => resolve());
+    }
+  });
+
+const removeStaleLockFiles = () => {
+  const lockFiles = ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort', 'lockfile'];
+  for (const name of lockFiles) {
+    const target = path.join(SESSION_DIR, name);
+    try {
+      if (fs.existsSync(target)) {
+        fs.rmSync(target, { force: true });
+      }
+    } catch {
+      // ignore if already gone
+    }
+  }
+};
+
+const clearSessionDir = () => {
+  try {
+    if (fs.existsSync(SESSION_DIR)) {
+      fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+    }
+  } catch {
+    // ignore
+  }
+};
+
 let client = null;
 let ioRef = null;
+let shouldClearSessionNextInit = false;
+let initializingPromise = null;
 
 const state = {
   status: 'DISCONNECTED', // DISCONNECTED | INITIALIZING | QR_READY | AUTHENTICATED | READY | ERROR
@@ -58,7 +111,7 @@ const attachIO = (io) => {
 };
 
 const getStatus = () => ({
-  installed: Boolean(Client),
+  installed: Boolean(Client || loadWhatsAppWebPkg()),
   status: state.status,
   isReady: state.status === 'READY',
   qrDataUrl: state.qrDataUrl,
@@ -68,6 +121,15 @@ const getStatus = () => ({
   updatedAt: state.updatedAt,
 });
 
+const destroyClientSafely = async (targetClient) => {
+  if (!targetClient) return;
+  try {
+    await targetClient.destroy();
+  } catch {
+    // ignore
+  }
+};
+
 const initializeWhatsAppWeb = async () => {
   if (!loadWhatsAppWebPkg()) {
     state.status = 'ERROR';
@@ -76,6 +138,10 @@ const initializeWhatsAppWeb = async () => {
         ? 'Mode whatsapp-web tidak didukung di Vercel Serverless. Gunakan WHATSAPP_PROVIDER=fonnte atau Telegram Bot API.'
         : 'Paket whatsapp-web.js belum terpasang di backend.';
     emitState();
+    return getStatus();
+  }
+
+  if (initializingPromise) {
     return getStatus();
   }
 
@@ -89,93 +155,121 @@ const initializeWhatsAppWeb = async () => {
   state.lastError = null;
   emitState();
 
-  const executablePath = findBrowserExecutable();
-  const authDir = path.resolve(__dirname, '../../.wwebjs_auth');
+  initializingPromise = (async () => {
+    // 1. Clean up any existing client, orphaned Chrome processes, and Chromium lock files
+    if (client) {
+      const old = client;
+      client = null;
+      await destroyClientSafely(old);
+    }
+    await killOrphanedSessionBrowsers();
+    await new Promise((r) => setTimeout(r, 400));
 
-  client = new Client({
-    authStrategy: new LocalAuth({
-      clientId: 'ferrymarket-bot',
-      dataPath: authDir,
-    }),
-    authTimeoutMs: 60000,
-    puppeteer: {
-      headless: true,
-      timeout: 60000,
-      protocolTimeout: 60000,
-      ...(executablePath ? { executablePath } : {}),
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-      ],
-    },
-  });
+    if (shouldClearSessionNextInit) {
+      clearSessionDir();
+      shouldClearSessionNextInit = false;
+    } else {
+      removeStaleLockFiles();
+    }
 
-  client.on('qr', async (qr) => {
-    try {
-      state.status = 'QR_READY';
-      state.qrRaw = qr;
-      state.qrDataUrl = await QRCode.toDataURL(qr, { width: 280, margin: 2 });
+    const executablePath = findBrowserExecutable();
+
+    const newClient = new Client({
+      authStrategy: new LocalAuth({
+        clientId: SESSION_CLIENT_ID,
+        dataPath: AUTH_DIR,
+      }),
+      authTimeoutMs: 60000,
+      puppeteer: {
+        headless: true,
+        timeout: 60000,
+        protocolTimeout: 60000,
+        ...(executablePath ? { executablePath } : {}),
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+        ],
+      },
+    });
+    client = newClient;
+
+    newClient.on('qr', async (qr) => {
+      try {
+        state.status = 'QR_READY';
+        state.qrRaw = qr;
+        state.qrDataUrl = await QRCode.toDataURL(qr, { width: 280, margin: 2 });
+        state.lastError = null;
+        console.log('📱 [WhatsApp-Web.js] QR Code siap di-scan di Dashboard Admin -> WhatsApp & Telegram!');
+        emitState();
+      } catch (err) {
+        state.lastError = err.message;
+        emitState();
+      }
+    });
+
+    newClient.on('authenticated', () => {
+      state.status = 'AUTHENTICATED';
+      state.qrRaw = null;
+      state.qrDataUrl = null;
       state.lastError = null;
-      console.log('📱 [WhatsApp-Web.js] QR Code siap di-scan di Dashboard Admin -> WhatsApp & Telegram!');
+      console.log('🔐 [WhatsApp-Web.js] Berhasil autentikasi, menyiapkan sesi...');
       emitState();
-    } catch (err) {
-      state.lastError = err.message;
+    });
+
+    newClient.on('ready', () => {
+      state.status = 'READY';
+      state.qrRaw = null;
+      state.qrDataUrl = null;
+      state.lastError = null;
+      state.connectedPhone = newClient?.info?.wid?.user || null;
+      state.connectedName = newClient?.info?.pushname || 'WhatsApp FerryMarket';
+      console.log(`✅ [WhatsApp-Web.js] Terhubung sebagai ${state.connectedName} (+${state.connectedPhone})`);
       emitState();
-    }
-  });
+    });
 
-  client.on('authenticated', () => {
-    state.status = 'AUTHENTICATED';
-    state.qrRaw = null;
-    state.qrDataUrl = null;
-    state.lastError = null;
-    console.log('🔐 [WhatsApp-Web.js] Berhasil autentikasi, menyiapkan sesi...');
-    emitState();
-  });
+    newClient.on('auth_failure', async (msg) => {
+      state.status = 'ERROR';
+      state.lastError = `Autentikasi WhatsApp gagal: ${msg}`;
+      state.qrDataUrl = null;
+      shouldClearSessionNextInit = true;
+      if (client === newClient) client = null;
+      console.error('❌ [WhatsApp-Web.js] Auth failure:', msg);
+      emitState();
+      await destroyClientSafely(newClient);
+      await killOrphanedSessionBrowsers();
+    });
 
-  client.on('ready', () => {
-    state.status = 'READY';
-    state.qrRaw = null;
-    state.qrDataUrl = null;
-    state.lastError = null;
-    state.connectedPhone = client?.info?.wid?.user || null;
-    state.connectedName = client?.info?.pushname || 'WhatsApp FerryMarket';
-    console.log(`✅ [WhatsApp-Web.js] Terhubung sebagai ${state.connectedName} (+${state.connectedPhone})`);
-    emitState();
-  });
+    newClient.on('disconnected', async (reason) => {
+      state.status = 'DISCONNECTED';
+      state.connectedPhone = null;
+      state.connectedName = null;
+      state.qrDataUrl = null;
+      state.lastError = `Terputus: ${reason}`;
+      if (String(reason || '').toUpperCase().includes('LOGOUT')) {
+        shouldClearSessionNextInit = true;
+      }
+      if (client === newClient) client = null;
+      console.warn('⚠️ [WhatsApp-Web.js] Disconnected:', reason);
+      emitState();
+      await destroyClientSafely(newClient);
+      await killOrphanedSessionBrowsers();
+    });
 
-  client.on('auth_failure', (msg) => {
-    state.status = 'ERROR';
-    state.lastError = `Autentikasi WhatsApp gagal: ${msg}`;
-    state.qrDataUrl = null;
-    console.error('❌ [WhatsApp-Web.js] Auth failure:', msg);
-    emitState();
-  });
-
-  client.on('disconnected', (reason) => {
-    state.status = 'DISCONNECTED';
-    state.connectedPhone = null;
-    state.connectedName = null;
-    state.qrDataUrl = null;
-    state.lastError = `Terputus: ${reason}`;
-    client = null;
-    console.warn('⚠️ [WhatsApp-Web.js] Disconnected:', reason);
-    emitState();
-  });
-
-  client.initialize().catch(async (err) => {
-    state.status = 'ERROR';
-    state.lastError = err.message;
     try {
-      await client?.destroy();
-    } catch {
-      // ignore
+      await newClient.initialize();
+    } catch (err) {
+      state.status = 'ERROR';
+      state.lastError = err.message;
+      if (client === newClient) client = null;
+      await destroyClientSafely(newClient);
+      await killOrphanedSessionBrowsers();
+      console.error('❌ [WhatsApp-Web.js] Initialize error:', err.message);
+      emitState();
     }
-    client = null;
-    console.error('❌ [WhatsApp-Web.js] Initialize error:', err.message);
-    emitState();
+  })().finally(() => {
+    initializingPromise = null;
   });
 
   return getStatus();
@@ -183,29 +277,26 @@ const initializeWhatsAppWeb = async () => {
 
 const closeBrowserOnly = async () => {
   if (client) {
-    try {
-      await client.destroy();
-    } catch {
-      // ignore
-    }
+    const old = client;
     client = null;
+    await destroyClientSafely(old);
   }
+  await killOrphanedSessionBrowsers();
 };
 
 const disconnectWhatsAppWeb = async () => {
   if (client) {
+    const old = client;
+    client = null;
     try {
-      await client.logout();
+      await old.logout();
     } catch {
       // ignore if already logged out
     }
-    try {
-      await client.destroy();
-    } catch {
-      // ignore
-    }
-    client = null;
+    await destroyClientSafely(old);
   }
+  await killOrphanedSessionBrowsers();
+  shouldClearSessionNextInit = true;
   state.status = 'DISCONNECTED';
   state.qrRaw = null;
   state.qrDataUrl = null;
