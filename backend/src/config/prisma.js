@@ -25,21 +25,21 @@ const createPrismaClient = () => {
     },
   });
 
-  // Auto-retry transient Supabase/network disconnects (P1001/P1017) cleanly up to 2 times
+  // Auto-retry transient Supabase/network disconnects (P1001/P1017) cleanly once with fast backoff
   const extended = base.$extends({
     query: {
       $allModels: {
         async $allOperations({ args, query }) {
           let lastError;
-          for (let attempt = 0; attempt < 3; attempt++) {
+          for (let attempt = 0; attempt < 2; attempt++) {
             try {
               return await query(args);
             } catch (err) {
               lastError = err;
-              if (!isTransientConnectionError(err) || attempt === 2) {
+              if (!isTransientConnectionError(err) || attempt === 1) {
                 throw err;
               }
-              await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+              await new Promise((r) => setTimeout(r, 250));
             }
           }
           throw lastError;
@@ -48,8 +48,8 @@ const createPrismaClient = () => {
     },
   });
 
-  // Keep TCP connection warm every 55s so Wi-Fi/NAT & Supabase pooler don't drop idle sockets
-  if (!globalForPrisma.prismaKeepAlive) {
+  // Keep TCP connection warm on persistent servers (disabled on Vercel Serverless)
+  if (process.env.VERCEL !== '1' && !globalForPrisma.prismaKeepAlive) {
     globalForPrisma.prismaKeepAlive = setInterval(() => {
       base.$queryRaw`SELECT 1`.catch(() => {});
     }, 55000);

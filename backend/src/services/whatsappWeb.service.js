@@ -97,8 +97,11 @@ const initializeWhatsAppWeb = async () => {
       clientId: 'ferrymarket-bot',
       dataPath: authDir,
     }),
+    authTimeoutMs: 60000,
     puppeteer: {
       headless: true,
+      timeout: 60000,
+      protocolTimeout: 60000,
       ...(executablePath ? { executablePath } : {}),
       args: [
         '--no-sandbox',
@@ -162,15 +165,31 @@ const initializeWhatsAppWeb = async () => {
     emitState();
   });
 
-  client.initialize().catch((err) => {
+  client.initialize().catch(async (err) => {
     state.status = 'ERROR';
     state.lastError = err.message;
+    try {
+      await client?.destroy();
+    } catch {
+      // ignore
+    }
     client = null;
     console.error('❌ [WhatsApp-Web.js] Initialize error:', err.message);
     emitState();
   });
 
   return getStatus();
+};
+
+const closeBrowserOnly = async () => {
+  if (client) {
+    try {
+      await client.destroy();
+    } catch {
+      // ignore
+    }
+    client = null;
+  }
 };
 
 const disconnectWhatsAppWeb = async () => {
@@ -218,5 +237,6 @@ module.exports = {
   getStatus,
   initializeWhatsAppWeb,
   disconnectWhatsAppWeb,
+  closeBrowserOnly,
   sendViaWhatsAppWeb,
 };
