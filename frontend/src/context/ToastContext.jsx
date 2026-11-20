@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
 const ToastContext = createContext(null);
@@ -13,17 +13,27 @@ export function ToastProvider({ children }) {
   const addToast = useCallback(
     (message, type = 'info', duration = 4000) => {
       const id = `${Date.now()}-${Math.random()}`;
-      setToasts((prev) => [...prev, { id, message, type }]);
+      setToasts((prev) => {
+        // Prevent duplicate toast spam with the exact same message
+        if (prev.some((t) => t.message === message && t.type === type)) {
+          return prev;
+        }
+        return [...prev.slice(-2), { id, message, type }];
+      });
       setTimeout(() => removeToast(id), duration);
     },
     [removeToast]
   );
 
-  const toast = {
-    success: (msg) => addToast(msg, 'success'),
-    error: (msg) => addToast(msg, 'error', 5500),
-    info: (msg) => addToast(msg, 'info'),
-  };
+  // Memoize toast object so pages putting `toast` in useCallback/useEffect deps NEVER infinite-loop!
+  const toast = useMemo(
+    () => ({
+      success: (msg) => addToast(msg, 'success'),
+      error: (msg) => addToast(msg, 'error', 5500),
+      info: (msg) => addToast(msg, 'info'),
+    }),
+    [addToast]
+  );
 
   return (
     <ToastContext.Provider value={toast}>
