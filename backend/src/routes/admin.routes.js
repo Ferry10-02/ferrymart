@@ -1,5 +1,6 @@
 const express = require('express');
 const adminController = require('../controllers/admin.controller');
+const adminExtraController = require('../controllers/adminExtra.controller');
 const { authenticate, requireRole, requireAdminPermission } = require('../middleware/auth.middleware');
 const { uploadImage } = require('../middleware/upload.middleware');
 const { uploadLimiter } = require('../middleware/rateLimit.middleware');
@@ -91,5 +92,19 @@ router.delete('/banners/:id', requireAdminPermission('MANAGE_BANNERS'), adminCon
 // Platform Settings (Service Fees, Site Info, Manual Payment Methods)
 router.get('/settings', requireAdminPermission('MANAGE_SETTINGS'), adminController.listSettings);
 router.put('/settings/:key', requireAdminPermission('MANAGE_SETTINGS'), adminController.updateSetting);
+
+// Voucher / Coupon Management
+router.get('/coupons', requireAdminPermission('MANAGE_SETTINGS'), adminExtraController.listAdminCoupons);
+router.post('/coupons', requireAdminPermission('MANAGE_SETTINGS'), adminExtraController.createAdminCoupon);
+router.put('/coupons/:id', requireAdminPermission('MANAGE_SETTINGS'), adminExtraController.updateAdminCoupon);
+router.delete('/coupons/:id', requireAdminPermission('MANAGE_SETTINGS'), adminExtraController.deleteAdminCoupon);
+
+// Seller Payouts / Withdrawals
+router.get('/payouts', requireAdminPermission('VERIFY_PAYMENTS'), adminExtraController.listAdminPayouts);
+router.put('/payouts/:id/process', requireAdminPermission('VERIFY_PAYMENTS'), adminExtraController.processAdminPayout);
+
+// Buyer Complaints & Refunds
+router.get('/refunds', requireAdminPermission('MANAGE_ORDERS'), adminExtraController.listAdminRefunds);
+router.put('/refunds/:id/process', requireAdminPermission('MANAGE_ORDERS'), adminExtraController.processAdminRefund);
 
 module.exports = router;

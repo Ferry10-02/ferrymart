@@ -14,6 +14,7 @@ import {
   Menu,
   X,
   ArrowLeft,
+  Star,
 } from 'lucide-react';
 import Logo from '../components/common/Logo';
 import { useAuth } from '../context/AuthContext';
@@ -24,7 +25,8 @@ const navItems = [
   { to: '/seller/products', label: 'Produk & Stok', icon: Package },
   { to: '/seller/qr', label: 'QR Code Produk', icon: QrCode },
   { to: '/seller/orders', label: 'Pesanan & Kirim', icon: ShoppingBag },
-  { to: '/seller/transactions', label: 'Riwayat Transaksi', icon: Wallet },
+  { to: '/seller/reviews', label: 'Ulasan Pembeli', icon: Star },
+  { to: '/seller/transactions', label: 'Saldo & Pencairan', icon: Wallet },
   { to: '/seller/reports', label: 'Laporan Penjualan', icon: BarChart3 },
   { to: '/seller/chat', label: 'Chat Pembeli', icon: MessageSquare },
   { to: '/seller/settings', label: 'Pengaturan Toko', icon: Settings },

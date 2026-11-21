@@ -1,6 +1,7 @@
 const express = require('express');
 const { z } = require('zod');
 const sellerController = require('../controllers/seller.controller');
+const adminExtraController = require('../controllers/adminExtra.controller');
 const { authenticate, requireRole, requireSellerProfile } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validate.middleware');
 const { uploadImage } = require('../middleware/upload.middleware');
@@ -66,5 +67,7 @@ router.get('/products/:id/qr', ...sellerGuard, sellerController.getSellerProduct
 router.get('/orders', ...sellerGuard, sellerController.listSellerOrders);
 router.put('/orders/:id/status', ...sellerGuard, sellerController.updateSellerOrderStatus);
 router.get('/transactions', ...sellerGuard, sellerController.listSellerTransactions);
+router.get('/payouts', ...sellerGuard, adminExtraController.getSellerPayouts);
+router.post('/payouts', ...sellerGuard, adminExtraController.requestSellerPayout);
 
 module.exports = router;

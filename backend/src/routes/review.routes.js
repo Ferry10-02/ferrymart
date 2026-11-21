@@ -19,6 +19,13 @@ const replySchema = z.object({
 });
 
 router.get('/product/:productId', reviewController.listProductReviews);
+router.get(
+  '/seller',
+  authenticate,
+  requireRole('SELLER'),
+  requireSellerProfile,
+  reviewController.listSellerReviews
+);
 router.post('/', authenticate, validate(createReviewSchema), reviewController.createReview);
 router.put(
   '/:id/reply',

@@ -15,6 +15,7 @@ import {
   Copy,
   Clock,
   Printer,
+  RotateCcw,
 } from 'lucide-react';
 import api, { getErrorMessage } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
@@ -56,6 +57,15 @@ export default function OrderDetailPage() {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
+
+  // Refund / Complaint modal state
+  const [refundTarget, setRefundTarget] = useState(null);
+  const [refundForm, setRefundForm] = useState({
+    reason: 'Barang rusak / cacat',
+    description: '',
+    refundAccount: '',
+  });
+  const [submittingRefund, setSubmittingRefund] = useState(false);
 
   const loadOrder = useCallback(async () => {
     setLoading(true);
@@ -152,6 +162,23 @@ export default function OrderDetailPage() {
       toast.error(getErrorMessage(err));
     } finally {
       setSubmittingReview(false);
+    }
+  };
+
+  const handleSubmitRefund = async (e) => {
+    e.preventDefault();
+    if (!refundTarget) return;
+    setSubmittingRefund(true);
+    try {
+      const res = await api.post(`/orders/seller-orders/${refundTarget.id}/refund-request`, refundForm);
+      toast.success(res.data.message);
+      setRefundTarget(null);
+      setRefundForm({ reason: 'Barang rusak / cacat', description: '', refundAccount: '' });
+      await Promise.all([loadOrder(), refreshOrderSummary?.()]);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setSubmittingRefund(false);
     }
   };
 
@@ -464,16 +491,56 @@ export default function OrderDetailPage() {
                     </button>
                   )}
                 </div>
-                {['SHIPPED', 'DELIVERED'].includes(so.status) && (
-                  <button
-                    type="button"
-                    onClick={() => handleConfirmReceived(so.id)}
-                    className="btn-primary px-3.5 py-1.5 text-xs"
-                  >
-                    <CheckCircle2 className="h-4 w-4" /> Pesanan Diterima (Selesai)
-                  </button>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {['PAID', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'COMPLETED'].includes(so.status) &&
+                    !(data.refundRequests || []).some(
+                      (rf) => rf.sellerOrderId === so.id && ['PENDING', 'APPROVED'].includes(rf.status)
+                    ) && (
+                      <button
+                        type="button"
+                        onClick={() => setRefundTarget(so)}
+                        className="btn-outline border-red-200 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" /> Ajukan Komplain / Refund
+                      </button>
+                    )}
+                  {['SHIPPED', 'DELIVERED'].includes(so.status) && (
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmReceived(so.id)}
+                      className="btn-primary px-3.5 py-1.5 text-xs"
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> Pesanan Diterima (Selesai)
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {(data.refundRequests || [])
+                .filter((rf) => rf.sellerOrderId === so.id)
+                .map((rf) => (
+                  <div
+                    key={rf.id}
+                    className={`rounded-xl border p-3 text-xs ${
+                      rf.status === 'APPROVED'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                        : rf.status === 'REJECTED'
+                        ? 'border-red-200 bg-red-50 text-red-900'
+                        : 'border-amber-200 bg-amber-50 text-amber-900'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold">
+                        Pengajuan Komplain / Refund: {rf.reason}
+                      </span>
+                      <StatusBadge status={rf.status} />
+                    </div>
+                    {rf.description && <p className="mt-1">{rf.description}</p>}
+                    {rf.adminNote && (
+                      <p className="mt-1 font-semibold">Catatan Admin: {rf.adminNote}</p>
+                    )}
+                  </div>
+                ))}
 
               {Array.isArray(so.shipment?.trackingHistory) && so.shipment.trackingHistory.length > 0 && (
                 <div className="rounded-xl border border-slate-200 bg-white p-3.5">
@@ -538,6 +605,63 @@ export default function OrderDetailPage() {
               </button>
               <button type="submit" disabled={submittingReview} className="btn-primary">
                 {submittingReview ? 'Mengirim...' : 'Kirim Ulasan'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Refund / Complaint Modal */}
+      {refundTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/60 p-4 backdrop-blur-xs">
+          <form onSubmit={handleSubmitRefund} className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-navy-900">Ajukan Komplain / Pengembalian Dana</h3>
+            <p className="text-xs text-slate-500">
+              Toko <strong>{refundTarget.seller?.storeName}</strong> ({refundTarget.subOrderNumber})
+            </p>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-700">Alasan Pengajuan *</label>
+              <select
+                value={refundForm.reason}
+                onChange={(e) => setRefundForm({ ...refundForm, reason: e.target.value })}
+                className="input-field"
+              >
+                <option value="Barang rusak / cacat">Barang rusak / cacat</option>
+                <option value="Barang tidak sesuai deskripsi">Barang tidak sesuai deskripsi</option>
+                <option value="Barang kurang / tidak lengkap">Barang kurang / tidak lengkap</option>
+                <option value="Paket belum diterima">Paket belum diterima</option>
+                <option value="Lainnya">Lainnya</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-700">Kronologi / Penjelasan *</label>
+              <textarea
+                rows={3}
+                required
+                value={refundForm.description}
+                onChange={(e) => setRefundForm({ ...refundForm, description: e.target.value })}
+                placeholder="Jelaskan kendala pada pesanan Anda secara singkat..."
+                className="input-field"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-slate-700">
+                Rekening / E-Wallet Tujuan Pengembalian Dana *
+              </label>
+              <input
+                required
+                value={refundForm.refundAccount}
+                onChange={(e) => setRefundForm({ ...refundForm, refundAccount: e.target.value })}
+                placeholder="Contoh: BCA 1234567890 a.n. Nama Anda"
+                className="input-field"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setRefundTarget(null)} className="btn-outline">
+                Batal
+              </button>
+              <button type="submit" disabled={submittingRefund} className="btn-danger">
+                {submittingRefund ? 'Mengirim...' : 'Kirim Pengajuan Refund'}
               </button>
             </div>
           </form>

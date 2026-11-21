@@ -21,11 +21,14 @@ import {
   Menu,
   X,
   ArrowLeft,
+  Ticket,
+  Wallet,
+  RotateCcw,
 } from 'lucide-react';
 import Logo from '../components/common/Logo';
 import { useAuth } from '../context/AuthContext';
 
-// All 16 Required Admin Sidebar Menus
+// All Admin Sidebar Menus
 const adminNavItems = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/users', label: 'Pengguna', icon: Users },
@@ -33,9 +36,12 @@ const adminNavItems = [
   { to: '/admin/seller-verification', label: 'Verifikasi Seller', icon: BadgeCheck },
   { to: '/admin/products', label: 'Produk', icon: Package },
   { to: '/admin/categories', label: 'Kategori', icon: Tags },
+  { to: '/admin/coupons', label: 'Voucher & Kupon', icon: Ticket },
   { to: '/admin/orders', label: 'Pesanan', icon: ShoppingBag },
   { to: '/admin/payments', label: 'Pembayaran', icon: CreditCard },
   { to: '/admin/payment-verification', label: 'Verifikasi Pembayaran', icon: ShieldCheck },
+  { to: '/admin/payouts', label: 'Pencairan Seller', icon: Wallet },
+  { to: '/admin/refunds', label: 'Komplain & Refund', icon: RotateCcw },
   { to: '/admin/transactions', label: 'Transaksi', icon: Receipt },
   { to: '/admin/reports', label: 'Laporan', icon: BarChart3 },
   { to: '/admin/notifications', label: 'WhatsApp & Telegram', icon: BellRing },

@@ -36,6 +36,7 @@ const SellerDashboardPage = lazy(() => import('./pages/seller/SellerDashboardPag
 const SellerProductsPage = lazy(() => import('./pages/seller/SellerProductsPage'));
 const SellerQrPage = lazy(() => import('./pages/seller/SellerQrPage'));
 const SellerOrdersPage = lazy(() => import('./pages/seller/SellerOrdersPage'));
+const SellerReviewsPage = lazy(() => import('./pages/seller/SellerReviewsPage'));
 const SellerTransactionsPage = lazy(() => import('./pages/seller/SellerTransactionsPage'));
 const SellerReportsPage = lazy(() => import('./pages/seller/SellerReportsPage'));
 const SellerChatPage = lazy(() => import('./pages/seller/SellerChatPage'));
@@ -47,8 +48,11 @@ const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
 const AdminSellersPage = lazy(() => import('./pages/admin/AdminSellersPage'));
 const AdminProductsPage = lazy(() => import('./pages/admin/AdminProductsPage'));
 const AdminCategoriesPage = lazy(() => import('./pages/admin/AdminCategoriesPage'));
+const AdminCouponsPage = lazy(() => import('./pages/admin/AdminCouponsPage'));
 const AdminOrdersPage = lazy(() => import('./pages/admin/AdminOrdersPage'));
 const AdminPaymentsPage = lazy(() => import('./pages/admin/AdminPaymentsPage'));
+const AdminPayoutsPage = lazy(() => import('./pages/admin/AdminPayoutsPage'));
+const AdminRefundsPage = lazy(() => import('./pages/admin/AdminRefundsPage'));
 const AdminReportsPage = lazy(() => import('./pages/admin/AdminReportsPage'));
 const AdminNotificationsPage = lazy(() => import('./pages/admin/AdminNotificationsPage'));
 const AdminChatsPage = lazy(() => import('./pages/admin/AdminChatsPage'));
@@ -166,6 +170,7 @@ export default function App() {
                     <Route path="products" element={<SellerProductsPage />} />
                     <Route path="qr" element={<SellerQrPage />} />
                     <Route path="orders" element={<SellerOrdersPage />} />
+                    <Route path="reviews" element={<SellerReviewsPage />} />
                     <Route path="transactions" element={<SellerTransactionsPage />} />
                     <Route path="reports" element={<SellerReportsPage />} />
                     <Route path="chat" element={<SellerChatPage />} />
@@ -193,6 +198,7 @@ export default function App() {
                     />
                     <Route path="products" element={<AdminProductsPage />} />
                     <Route path="categories" element={<AdminCategoriesPage />} />
+                    <Route path="coupons" element={<AdminCouponsPage />} />
                     <Route path="orders" element={<AdminOrdersPage title="Kelola Pesanan" />} />
                     <Route
                       path="payments"
@@ -207,6 +213,8 @@ export default function App() {
                         />
                       }
                     />
+                    <Route path="payouts" element={<AdminPayoutsPage />} />
+                    <Route path="refunds" element={<AdminRefundsPage />} />
                     <Route
                       path="transactions"
                       element={<AdminOrdersPage title="Riwayat Transaksi Marketplace" />}

@@ -2,6 +2,7 @@ const prisma = require('../config/prisma');
 const { AppError, asyncHandler } = require('../utils/errors');
 const { generateOrderQr } = require('../services/qr.service');
 const { notifyUser } = require('../services/notification.service');
+const { getOrderRefundRequests } = require('./adminExtra.controller');
 const { NOTIFICATION_EVENTS } = require('../utils/constants');
 const { formatIDR } = require('../utils/sanitize');
 
@@ -184,13 +185,17 @@ const getOrderDetail = asyncHandler(async (req, res) => {
         }
       : order;
 
-  const qr = await generateOrderQr(order);
+  const [qr, refundRequests] = await Promise.all([
+    generateOrderQr(order),
+    getOrderRefundRequests(order.id),
+  ]);
 
   res.json({
     success: true,
     data: {
       order: sanitizedOrder,
       qr,
+      refundRequests,
     },
   });
 });
