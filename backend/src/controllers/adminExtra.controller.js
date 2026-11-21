@@ -644,6 +644,7 @@ const processAdminRefund = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  computeSellerBalance,
   listAdminCoupons,
   createAdminCoupon,
   updateAdminCoupon,

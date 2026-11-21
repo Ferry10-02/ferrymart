@@ -12,6 +12,7 @@ const {
 const { NOTIFICATION_EVENTS } = require('../utils/constants');
 const { invalidateCachePrefix } = require('../utils/cache');
 const { invalidateUserCache } = require('../middleware/auth.middleware');
+const { computeSellerBalance } = require('./adminExtra.controller');
 
 // PUBLIC: GET /api/sellers/store/:slug
 const getPublicStore = asyncHandler(async (req, res) => {
@@ -57,6 +58,7 @@ const getSellerDashboard = asyncHandler(async (req, res) => {
     revenueAgg,
     recentOrders,
     chartOrders,
+    balance,
   ] = await Promise.all([
     prisma.sellerOrder.count({ where: { sellerId } }),
     prisma.sellerOrder.count({
@@ -86,6 +88,7 @@ const getSellerDashboard = asyncHandler(async (req, res) => {
       select: { createdAt: true, subtotal: true, sellerPayout: true },
       orderBy: { createdAt: 'asc' },
     }),
+    computeSellerBalance(sellerId),
   ]);
 
   // Group sales by day for Recharts chart
@@ -115,6 +118,9 @@ const getSellerDashboard = asyncHandler(async (req, res) => {
         totalProducts,
         grossRevenue: Number(revenueAgg._sum.subtotal || 0),
         netPayout: Number(revenueAgg._sum.sellerPayout || 0),
+        availableBalance: balance.availableBalance,
+        lockedPendingAmount: balance.lockedPendingAmount,
+        withdrawnTotal: balance.withdrawnTotal,
         ratingAvg: Number(req.user.sellerProfile.ratingAvg || 0),
       },
       salesChart: Array.from(dailyMap.values()),
