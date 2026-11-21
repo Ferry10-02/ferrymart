@@ -80,10 +80,8 @@ const getAvailableCoupons = async () => {
   const coupons = await prisma.coupon.findMany({
     where: {
       isActive: true,
-      AND: [
-        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
-        { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
-      ],
+      startsAt: { lte: now },
+      OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
     },
     orderBy: { discountValue: 'desc' },
     take: 10,
@@ -93,7 +91,6 @@ const getAvailableCoupons = async () => {
     .map((c) => ({
       id: c.id,
       code: c.code,
-      description: c.description,
       discountType: c.discountType,
       discountValue: Number(c.discountValue),
       minPurchase: Number(c.minPurchase || 0),

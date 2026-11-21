@@ -7,7 +7,6 @@ import { formatIDR, formatDate } from '../../utils/format';
 
 const EMPTY_FORM = {
   code: '',
-  description: '',
   discountType: 'PERCENTAGE',
   discountValue: '10',
   minPurchase: '50000',
@@ -52,7 +51,6 @@ export default function AdminCouponsPage() {
     setEditing(c);
     setForm({
       code: c.code || '',
-      description: c.description || '',
       discountType: c.discountType || 'PERCENTAGE',
       discountValue: String(Number(c.discountValue || 0)),
       minPurchase: String(Number(c.minPurchase || 0)),
@@ -310,16 +308,6 @@ export default function AdminCouponsPage() {
                   className="input-field"
                 />
               </div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-700">Deskripsi Promo</label>
-              <input
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="Contoh: Diskon spesial pengguna setia FerryMarket"
-                className="input-field"
-              />
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 items-center">

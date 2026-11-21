@@ -59,7 +59,6 @@ const listAdminCoupons = asyncHandler(async (req, res) => {
 const createAdminCoupon = asyncHandler(async (req, res) => {
   const {
     code,
-    description,
     discountType = 'PERCENTAGE',
     discountValue,
     minPurchase = 0,
@@ -91,13 +90,12 @@ const createAdminCoupon = asyncHandler(async (req, res) => {
   const coupon = await prisma.coupon.create({
     data: {
       code: cleanCode,
-      description: description?.trim() || null,
       discountType: discountType === 'FIXED' ? 'FIXED' : 'PERCENTAGE',
       discountValue: parsedValue,
       minPurchase: Math.max(0, Number(minPurchase || 0)),
       maxDiscount: maxDiscount !== undefined && maxDiscount !== '' && maxDiscount !== null ? Number(maxDiscount) : null,
       usageLimit: usageLimit !== undefined && usageLimit !== '' && usageLimit !== null ? parseInt(usageLimit, 10) : null,
-      startsAt: startsAt ? new Date(startsAt) : null,
+      startsAt: startsAt ? new Date(startsAt) : new Date(),
       expiresAt: expiresAt ? new Date(expiresAt) : null,
       isActive: Boolean(isActive),
     },
@@ -121,7 +119,6 @@ const updateAdminCoupon = asyncHandler(async (req, res) => {
 
   const {
     code,
-    description,
     discountType,
     discountValue,
     minPurchase,
@@ -134,7 +131,6 @@ const updateAdminCoupon = asyncHandler(async (req, res) => {
 
   const data = {};
   if (code !== undefined) data.code = String(code).trim().toUpperCase().replace(/\s+/g, '');
-  if (description !== undefined) data.description = description ? String(description).trim() : null;
   if (discountType !== undefined) data.discountType = discountType === 'FIXED' ? 'FIXED' : 'PERCENTAGE';
   if (discountValue !== undefined) data.discountValue = Number(discountValue);
   if (minPurchase !== undefined) data.minPurchase = Math.max(0, Number(minPurchase || 0));
@@ -144,7 +140,7 @@ const updateAdminCoupon = asyncHandler(async (req, res) => {
   if (usageLimit !== undefined) {
     data.usageLimit = usageLimit === '' || usageLimit === null ? null : parseInt(usageLimit, 10);
   }
-  if (startsAt !== undefined) data.startsAt = startsAt ? new Date(startsAt) : null;
+  if (startsAt) data.startsAt = new Date(startsAt);
   if (expiresAt !== undefined) data.expiresAt = expiresAt ? new Date(expiresAt) : null;
   if (isActive !== undefined) data.isActive = Boolean(isActive);
 
