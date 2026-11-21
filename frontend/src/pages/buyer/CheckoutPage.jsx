@@ -94,11 +94,13 @@ export default function CheckoutPage() {
     }
   };
 
-  const handleApplyCoupon = async () => {
-    if (!couponInput.trim()) return;
+  const handleApplyCoupon = async (overrideCode = null) => {
+    const codeToUse = (typeof overrideCode === 'string' ? overrideCode : couponInput).trim().toUpperCase();
+    if (!codeToUse) return;
+    setCouponInput(codeToUse);
     try {
       const res = await api.post('/checkout/validate-coupon', {
-        code: couponInput.trim(),
+        code: codeToUse,
         subtotal: options?.subtotal || 0,
       });
       setAppliedCoupon(res.data.data);
@@ -448,6 +450,49 @@ export default function CheckoutPage() {
                   <CheckCircle2 className="h-3.5 w-3.5" /> Kupon {appliedCoupon.code} aktif (-
                   {formatIDR(appliedCoupon.discountAmount)})
                 </p>
+              )}
+
+              {(options.availableCoupons || []).length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  <p className="text-[11px] font-bold text-slate-500">Voucher Tersedia (1-Klik Pakai):</p>
+                  <div className="space-y-1.5">
+                    {options.availableCoupons.slice(0, 4).map((vc) => {
+                      const eligible = subtotal >= Number(vc.minPurchase || 0);
+                      const isUsed = appliedCoupon?.code === vc.code;
+                      return (
+                        <button
+                          key={vc.id}
+                          type="button"
+                          disabled={!eligible}
+                          onClick={() => handleApplyCoupon(vc.code)}
+                          className={`flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left text-[11px] transition ${
+                            isUsed
+                              ? 'border-emerald-400 bg-emerald-50 text-emerald-800'
+                              : eligible
+                              ? 'border-dashed border-primary-300 bg-orange-50/50 hover:bg-orange-100/70'
+                              : 'border-slate-200 bg-slate-50 opacity-55 cursor-not-allowed'
+                          }`}
+                        >
+                          <div>
+                            <span className="font-mono font-extrabold text-primary-700">{vc.code}</span>
+                            <span className="ml-1.5 font-semibold text-navy-900">
+                              {vc.discountType === 'PERCENTAGE'
+                                ? `Diskon ${vc.discountValue}%`
+                                : `Potongan ${formatIDR(vc.discountValue)}`}
+                            </span>
+                            <p className="text-[10px] text-slate-500">
+                              Min. {formatIDR(vc.minPurchase)}
+                              {vc.maxDiscount ? ` • Maks. ${formatIDR(vc.maxDiscount)}` : ''}
+                            </p>
+                          </div>
+                          <span className="shrink-0 font-bold text-primary-600">
+                            {isUsed ? 'Dipakai ✓' : eligible ? 'Pakai' : 'Belum cukup'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
             </div>
 

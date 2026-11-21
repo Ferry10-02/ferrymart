@@ -79,6 +79,16 @@ app.use(cookieParser());
 // Serve local upload fallback files cleanly
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 
+// Friendly root endpoint (handy when opening deployed Vercel Backend URL directly)
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    service: 'FerryMarket API',
+    status: 'running',
+    health: '/api/health',
+  });
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   const waWeb = whatsappWeb.getStatus();

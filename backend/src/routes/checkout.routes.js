@@ -20,6 +20,9 @@ const couponSchema = z.object({
   subtotal: z.coerce.number().min(0),
 });
 
+// Public list of active vouchers for Home / Checkout banner
+router.get('/coupons', checkoutController.listAvailableCoupons);
+
 router.use(authenticate);
 
 router.get('/options', checkoutController.getCheckoutOptions);

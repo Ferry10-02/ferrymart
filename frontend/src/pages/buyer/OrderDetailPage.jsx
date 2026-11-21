@@ -14,12 +14,14 @@ import {
   MessageSquare,
   Copy,
   Clock,
+  Printer,
 } from 'lucide-react';
 import api, { getErrorMessage } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
 import { useSocket } from '../../context/SocketContext';
 import { LoadingState, ErrorState, StatusBadge, ConfirmModal } from '../../components/common/UIStates';
 import OrderProgressStepper from '../../components/marketplace/OrderProgressStepper';
+import InvoiceModal from '../../components/marketplace/InvoiceModal';
 import QrCodeModal from '../../components/qr/QrCodeModal';
 import { formatIDR, formatDate } from '../../utils/format';
 
@@ -33,6 +35,7 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [qrOpen, setQrOpen] = useState(false);
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
 
   // Payment proof upload form
   const [proofForm, setProofForm] = useState({
@@ -185,7 +188,10 @@ export default function OrderDetailPage() {
         <Link to="/orders" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-primary-600">
           <ArrowLeft className="h-4 w-4" /> Kembali ke Riwayat Pesanan
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setInvoiceOpen(true)} className="btn-outline px-3.5 py-2 text-xs">
+            <Printer className="h-4 w-4 text-primary-600" /> Cetak / PDF Invoice
+          </button>
           <button type="button" onClick={() => setQrOpen(true)} className="btn-navy px-3.5 py-2 text-xs">
             <QrCode className="h-4 w-4" /> Tampilkan QR Pesanan
           </button>
@@ -537,6 +543,8 @@ export default function OrderDetailPage() {
           </form>
         </div>
       )}
+
+      <InvoiceModal open={invoiceOpen} onClose={() => setInvoiceOpen(false)} order={order} />
 
       <QrCodeModal
         open={qrOpen}

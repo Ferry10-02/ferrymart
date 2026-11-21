@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { SlidersHorizontal, Search, RotateCcw } from 'lucide-react';
 import api, { getErrorMessage } from '../../services/api';
 import ProductCard from '../../components/marketplace/ProductCard';
-import { LoadingState, EmptyState, ErrorState, Pagination } from '../../components/common/UIStates';
+import { ProductGridSkeleton } from '../../components/marketplace/Skeletons';
+import { EmptyState, ErrorState, Pagination } from '../../components/common/UIStates';
 
 export default function ProductsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -219,7 +220,10 @@ export default function ProductsPage() {
           </div>
 
           {loading ? (
-            <LoadingState />
+            <ProductGridSkeleton
+              count={12}
+              cols="grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-4"
+            />
           ) : error ? (
             <ErrorState message={error} onRetry={loadProducts} />
           ) : products.length === 0 ? (

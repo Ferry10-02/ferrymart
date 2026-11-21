@@ -75,9 +75,43 @@ const validateCoupon = async (couponCode, subtotal) => {
   return { coupon, discountAmount };
 };
 
+const getAvailableCoupons = async () => {
+  const now = new Date();
+  const coupons = await prisma.coupon.findMany({
+    where: {
+      isActive: true,
+      AND: [
+        { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
+        { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
+      ],
+    },
+    orderBy: { discountValue: 'desc' },
+    take: 10,
+  });
+  return coupons
+    .filter((c) => c.usageLimit === null || c.usedCount < c.usageLimit)
+    .map((c) => ({
+      id: c.id,
+      code: c.code,
+      description: c.description,
+      discountType: c.discountType,
+      discountValue: Number(c.discountValue),
+      minPurchase: Number(c.minPurchase || 0),
+      maxDiscount: c.maxDiscount !== null ? Number(c.maxDiscount) : null,
+      expiresAt: c.expiresAt,
+      remainingQuota: c.usageLimit !== null ? Math.max(0, c.usageLimit - c.usedCount) : null,
+    }));
+};
+
+// GET /api/checkout/coupons - List active claimable vouchers
+const listAvailableCoupons = asyncHandler(async (req, res) => {
+  const coupons = await getAvailableCoupons();
+  res.json({ success: true, data: coupons });
+});
+
 // GET /api/checkout/options - Preview checkout options (addresses, shipping methods, payment methods, selected items)
 const getCheckoutOptions = asyncHandler(async (req, res) => {
-  const [addresses, shippingMethods, paymentMethods, serviceFeeCfg, cart] = await Promise.all([
+  const [addresses, shippingMethods, paymentMethods, serviceFeeCfg, availableCoupons, cart] = await Promise.all([
     prisma.address.findMany({
       where: { userId: req.user.id },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
@@ -88,6 +122,7 @@ const getCheckoutOptions = asyncHandler(async (req, res) => {
     }),
     getManualPaymentMethods(),
     getServiceFeeConfig(),
+    getAvailableCoupons(),
     prisma.cart.findUnique({
       where: { userId: req.user.id },
       include: {
@@ -152,6 +187,7 @@ const getCheckoutOptions = asyncHandler(async (req, res) => {
       shippingMethods,
       paymentMethods,
       serviceFeeConfig: serviceFeeCfg,
+      availableCoupons,
       sellerGroups: Array.from(sellerMap.values()),
       subtotal,
     },
@@ -453,6 +489,7 @@ const processCheckout = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  listAvailableCoupons,
   getCheckoutOptions,
   checkCoupon,
   processCheckout,

@@ -12,6 +12,10 @@ import {
   Minus,
   Plus,
   Zap,
+  ZoomIn,
+  ChevronLeft,
+  ChevronRight,
+  X,
 } from 'lucide-react';
 import api, { getErrorMessage } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -19,6 +23,7 @@ import { useCart } from '../../context/CartContext';
 import { useToast } from '../../context/ToastContext';
 import { LoadingState, ErrorState } from '../../components/common/UIStates';
 import ProductCard from '../../components/marketplace/ProductCard';
+import FlashSaleCountdown from '../../components/marketplace/FlashSaleCountdown';
 import QrCodeModal from '../../components/qr/QrCodeModal';
 import { formatIDR, formatDate, getEffectivePrice, getDiscountPercent } from '../../utils/format';
 
@@ -39,6 +44,8 @@ export default function ProductDetailPage() {
   const [quantity, setQuantity] = useState(1);
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [buyingNow, setBuyingNow] = useState(false);
 
   const loadProduct = async () => {
     setLoading(true);
@@ -92,9 +99,14 @@ export default function ProductDetailPage() {
       toast.info('Silakan login terlebih dahulu untuk berbelanja.');
       return navigate('/login', { state: { from: `/products/${slug}` } });
     }
-    const ok = await addToCart(product.id, selectedVariant?.id || null, quantity);
-    if (ok && buyNow) {
-      navigate('/cart');
+    if (buyNow) setBuyingNow(true);
+    try {
+      const ok = await addToCart(product.id, selectedVariant?.id || null, quantity);
+      if (ok && buyNow) {
+        navigate('/checkout');
+      }
+    } finally {
+      if (buyNow) setBuyingNow(false);
     }
   };
 
@@ -154,14 +166,23 @@ export default function ProductDetailPage() {
 
       {/* Main Product Box */}
       <div className="card grid grid-cols-1 gap-8 p-6 lg:grid-cols-12">
-        {/* Image Gallery */}
+        {/* Image Gallery with Click-to-Zoom Lightbox */}
         <div className="lg:col-span-5">
-          <div className="aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setLightboxOpen(true)}
+            onKeyDown={(e) => e.key === 'Enter' && setLightboxOpen(true)}
+            className="group relative aspect-square cursor-zoom-in overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+          >
             <img
               src={images[selectedImage]?.imageUrl}
               alt={product.name}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover transition duration-300 group-hover:scale-110"
             />
+            <span className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full bg-navy-900/75 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-xs transition group-hover:bg-primary-600">
+              <ZoomIn className="h-3.5 w-3.5" /> Perbesar
+            </span>
           </div>
           {images.length > 1 && (
             <div className="mt-3 grid grid-cols-5 gap-2">
@@ -170,8 +191,8 @@ export default function ProductDetailPage() {
                   key={img.id || idx}
                   type="button"
                   onClick={() => setSelectedImage(idx)}
-                  className={`aspect-square overflow-hidden rounded-lg border-2 ${
-                    selectedImage === idx ? 'border-primary-500' : 'border-slate-200'
+                  className={`aspect-square overflow-hidden rounded-lg border-2 transition ${
+                    selectedImage === idx ? 'border-primary-500 ring-2 ring-primary-200' : 'border-slate-200 hover:border-slate-400'
                   }`}
                 >
                   <img src={img.imageUrl} alt="" className="h-full w-full object-cover" />
@@ -186,9 +207,12 @@ export default function ProductDetailPage() {
           <div className="flex items-start justify-between gap-3">
             <div>
               {product.isFlashSale && (
-                <span className="mb-2 inline-flex items-center gap-1 rounded-md bg-orange-600 px-2.5 py-0.5 text-xs font-bold text-white">
-                  <Zap className="h-3.5 w-3.5 fill-white" /> FLASH SALE
-                </span>
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-orange-600 to-red-600 px-2.5 py-0.5 text-xs font-bold text-white">
+                    <Zap className="h-3.5 w-3.5 fill-white" /> FLASH SALE
+                  </span>
+                  <FlashSaleCountdown endsAt={product.flashSaleEndsAt} compact />
+                </div>
               )}
               <h1 className="text-xl font-extrabold text-navy-900 sm:text-2xl">{product.name}</h1>
             </div>
@@ -320,11 +344,11 @@ export default function ProductDetailPage() {
             </button>
             <button
               type="button"
-              disabled={activeStock === 0}
+              disabled={activeStock === 0 || buyingNow}
               onClick={() => handleAddToCart(true)}
               className="btn-primary flex-1 py-3"
             >
-              Beli Sekarang
+              <Zap className="h-4 w-4" /> {buyingNow ? 'Menuju Checkout...' : 'Beli Sekarang'}
             </button>
           </div>
 
@@ -445,6 +469,58 @@ export default function ProductDetailPage() {
         subtitle="Scan menggunakan kamera HP untuk langsung membuka halaman produk ini di FerryMarket."
         targetUrl={qr?.targetUrl || `${window.location.origin}/products/${product.slug}?src=qr`}
       />
+
+      {/* Fullscreen Image Zoom Lightbox */}
+      {lightboxOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/90 p-4 backdrop-blur-sm"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(false)}
+            className="absolute right-4 top-4 rounded-full bg-white/15 p-2.5 text-white hover:bg-white/25"
+          >
+            <X className="h-6 w-6" />
+          </button>
+
+          {images.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedImage((i) => (i - 1 + images.length) % images.length);
+                }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-3 text-white hover:bg-white/30"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedImage((i) => (i + 1) % images.length);
+                }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-3 text-white hover:bg-white/30"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            </>
+          )}
+
+          <div className="flex max-h-[88vh] max-w-4xl flex-col items-center" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={images[selectedImage]?.imageUrl}
+              alt={product.name}
+              className="max-h-[78vh] w-auto rounded-xl object-contain shadow-2xl"
+            />
+            <p className="mt-3 text-xs font-semibold text-slate-300">
+              {product.name} ({selectedImage + 1} / {images.length})
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

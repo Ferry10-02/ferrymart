@@ -30,12 +30,18 @@ import {
   Star,
   Heart,
   Store,
+  Ticket,
+  Copy,
 } from 'lucide-react';
 import api, { getErrorMessage } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
+import { useToast } from '../../context/ToastContext';
 import ProductCard from '../../components/marketplace/ProductCard';
-import { LoadingState, ErrorState, EmptyState } from '../../components/common/UIStates';
+import FlashSaleCountdown from '../../components/marketplace/FlashSaleCountdown';
+import { HomeSkeleton } from '../../components/marketplace/Skeletons';
+import { ErrorState, EmptyState } from '../../components/common/UIStates';
+import { formatIDR } from '../../utils/format';
 
 const CATEGORY_ICONS = {
   Smartphone,
@@ -54,24 +60,23 @@ const CATEGORY_ICONS = {
   BookOpen,
 };
 
-function ProductSection({ title, icon: Icon, iconColor = 'text-primary-500', products, viewAllTo, badge }) {
+function ProductSection({ title, icon: Icon, iconColor = 'text-primary-500', products, viewAllTo, badge, extraHeader = null }) {
   if (!products || products.length === 0) return null;
   return (
     <section className="mt-10">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
           <div className={`flex h-9 w-9 items-center justify-center rounded-xl bg-white shadow-xs border border-slate-200 ${iconColor}`}>
             <Icon className="h-5 w-5" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-extrabold text-navy-900">{title}</h2>
-              {badge && (
-                <span className="rounded-full bg-primary-100 px-2.5 py-0.5 text-[11px] font-bold text-primary-700">
-                  {badge}
-                </span>
-              )}
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-extrabold text-navy-900">{title}</h2>
+            {badge && (
+              <span className="rounded-full bg-primary-100 px-2.5 py-0.5 text-[11px] font-bold text-primary-700">
+                {badge}
+              </span>
+            )}
+            {extraHeader}
           </div>
         </div>
         {viewAllTo && (
@@ -95,7 +100,9 @@ function ProductSection({ title, icon: Icon, iconColor = 'text-primary-500', pro
 export default function HomePage() {
   const { isAuthenticated, hasRole } = useAuth();
   const { orderSummary } = useSocket() || {};
+  const toast = useToast();
   const [data, setData] = useState(null);
+  const [coupons, setCoupons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeBanner, setActiveBanner] = useState(0);
@@ -104,8 +111,12 @@ export default function HomePage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get('/products/home');
-      setData(res.data.data);
+      const [homeRes, couponRes] = await Promise.all([
+        api.get('/products/home'),
+        api.get('/checkout/coupons').catch(() => ({ data: { data: [] } })),
+      ]);
+      setData(homeRes.data.data);
+      setCoupons(couponRes.data?.data || []);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -128,7 +139,7 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, [heroBanners.length]);
 
-  if (loading) return <LoadingState message="Memuat katalog FerryMarket..." />;
+  if (loading) return <HomeSkeleton />;
   if (error) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-10">
@@ -356,12 +367,62 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Claimable Vouchers Strip */}
+      {coupons.length > 0 && (
+        <section className="mt-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wide text-navy-900">
+              <Ticket className="h-4 w-4 text-primary-500" /> Voucher Diskon Aktif
+            </h2>
+            <span className="text-xs text-slate-500">Klik untuk salin kode & pakai saat Checkout</span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {coupons.slice(0, 3).map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-primary-300 bg-gradient-to-r from-orange-50 via-white to-white p-3.5 shadow-xs"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded bg-primary-500 px-2 py-0.5 font-mono text-xs font-extrabold text-white">
+                      {c.code}
+                    </span>
+                    <span className="text-xs font-extrabold text-primary-700">
+                      {c.discountType === 'PERCENTAGE'
+                        ? `Diskon ${c.discountValue}%`
+                        : `Potongan ${formatIDR(c.discountValue)}`}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate text-[11px] text-slate-600">
+                    Min. belanja {formatIDR(c.minPurchase)}
+                    {c.maxDiscount ? ` • Maks. ${formatIDR(c.maxDiscount)}` : ''}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(c.code);
+                    toast.success(`Kode voucher ${c.code} disalin! Gunakan di halaman Checkout.`);
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-navy-900 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-primary-600"
+                >
+                  <Copy className="h-3 w-3" /> Klaim
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Flash Sale */}
       <ProductSection
         title="Flash Sale"
         icon={Zap}
         iconColor="text-orange-600"
         badge="TERBATAS"
+        extraHeader={
+          <FlashSaleCountdown endsAt={data?.flashSale?.[0]?.flashSaleEndsAt} />
+        }
         products={data?.flashSale}
         viewAllTo="/products?flash_sale=true"
       />

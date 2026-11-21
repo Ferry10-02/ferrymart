@@ -56,6 +56,32 @@ export default function ProductCard({ product }) {
         </div>
 
         <div className="mt-auto pt-2.5">
+          {product.isFlashSale && (
+            <div className="mb-2">
+              <div className="relative h-4 w-full overflow-hidden rounded-full bg-orange-100">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-orange-500 to-[#EE4D2D]"
+                  style={{
+                    width: `${Math.min(
+                      95,
+                      Math.max(
+                        18,
+                        Math.round(
+                          ((Number(product.soldCount || 0) + 3) /
+                            Math.max(1, Number(product.soldCount || 0) + Number(product.stock || 0) + 3)) *
+                            100
+                        )
+                      )
+                    )}%`,
+                  }}
+                />
+                <span className="absolute inset-0 flex items-center justify-center text-[9px] font-extrabold uppercase tracking-wide text-white drop-shadow-xs">
+                  {product.stock <= 5 ? 'Segera Habis!' : `${product.soldCount || 0} Terjual`}
+                </span>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between text-xs text-slate-500">
             <span className="inline-flex items-center gap-1">
               <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
