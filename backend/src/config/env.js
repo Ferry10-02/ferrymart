@@ -20,23 +20,25 @@ const detectLanIp = () => {
   return 'localhost';
 };
 
-const lanIp = detectLanIp();
-const resolvedAppUrl =
-  !process.env.APP_URL || process.env.APP_URL === 'auto'
-    ? `http://${lanIp}:5173`
-    : process.env.APP_URL.replace(/\/$/, '');
-const resolvedBackendUrl =
-  !process.env.BACKEND_URL || process.env.BACKEND_URL === 'auto'
-    ? `http://${lanIp}:${process.env.PORT || 5000}`
-    : process.env.BACKEND_URL.replace(/\/$/, '');
+const rawAppUrl = (process.env.APP_URL || 'auto').trim();
+const rawBackendUrl = (process.env.BACKEND_URL || 'auto').trim();
+const isAutoAppUrl = !rawAppUrl || rawAppUrl.toLowerCase() === 'auto';
+const isAutoBackendUrl = !rawBackendUrl || rawBackendUrl.toLowerCase() === 'auto';
+const portNum = parseInt(process.env.PORT || '5000', 10);
 
 const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
-  port: parseInt(process.env.PORT || '5000', 10),
+  port: portNum,
   appName: process.env.APP_NAME || 'FerryMarket',
-  lanIp,
-  appUrl: resolvedAppUrl,
-  backendUrl: resolvedBackendUrl,
+  get lanIp() {
+    return detectLanIp();
+  },
+  get appUrl() {
+    return isAutoAppUrl ? `http://${detectLanIp()}:5173` : rawAppUrl.replace(/\/$/, '');
+  },
+  get backendUrl() {
+    return isAutoBackendUrl ? `http://${detectLanIp()}:${portNum}` : rawBackendUrl.replace(/\/$/, '');
+  },
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
 
   jwt: {
