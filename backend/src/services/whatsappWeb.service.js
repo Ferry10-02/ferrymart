@@ -88,6 +88,14 @@ let client = null;
 let ioRef = null;
 let shouldClearSessionNextInit = false;
 let initializingPromise = null;
+let domQrWatcher = null;
+
+const stopDomQrWatcher = () => {
+  if (domQrWatcher) {
+    clearInterval(domQrWatcher);
+    domQrWatcher = null;
+  }
+};
 
 const state = {
   status: 'DISCONNECTED', // DISCONNECTED | INITIALIZING | QR_READY | AUTHENTICATED | READY | ERROR
@@ -219,6 +227,7 @@ const initializeWhatsAppWeb = async () => {
     });
 
     newClient.on('ready', () => {
+      stopDomQrWatcher();
       state.status = 'READY';
       state.qrRaw = null;
       state.qrDataUrl = null;
@@ -230,6 +239,7 @@ const initializeWhatsAppWeb = async () => {
     });
 
     newClient.on('auth_failure', async (msg) => {
+      stopDomQrWatcher();
       state.status = 'ERROR';
       state.lastError = `Autentikasi WhatsApp gagal: ${msg}`;
       state.qrDataUrl = null;
@@ -242,6 +252,7 @@ const initializeWhatsAppWeb = async () => {
     });
 
     newClient.on('disconnected', async (reason) => {
+      stopDomQrWatcher();
       state.status = 'DISCONNECTED';
       state.connectedPhone = null;
       state.connectedName = null;
@@ -257,9 +268,81 @@ const initializeWhatsAppWeb = async () => {
       await killOrphanedSessionBrowsers();
     });
 
+    // Fallback DOM QR watcher for WhatsApp Web's new /login/ flow (renders QR in ~4s even when legacy socket hook lags)
+    stopDomQrWatcher();
+    const startedAt = Date.now();
+    let reinjectTriggered = false;
+    domQrWatcher = setInterval(async () => {
+      if (client !== newClient || ['READY', 'DISCONNECTED', 'ERROR'].includes(state.status)) {
+        stopDomQrWatcher();
+        return;
+      }
+      try {
+        const page = newClient.pupPage;
+        if (!page || page.isClosed()) return;
+
+        const domInfo = await page.evaluate(() => {
+          const qrEl = document.querySelector('[data-ref]');
+          const dataRef = qrEl ? qrEl.getAttribute('data-ref') : null;
+          const canvas = document.querySelector('canvas');
+          let canvasUrl = null;
+          if (!dataRef && canvas) {
+            try {
+              canvasUrl = canvas.toDataURL('image/png');
+            } catch {
+              canvasUrl = null;
+            }
+          }
+          const isLoginRoute = location.pathname.startsWith('/login');
+          const hasApp = Boolean(document.querySelector('#pane-side'));
+          const hasWWebJs = typeof window.WWebJS !== 'undefined';
+          return { dataRef, canvasUrl, isLoginRoute, hasApp, hasWWebJs };
+        });
+
+        if (domInfo.dataRef && domInfo.dataRef !== state.qrRaw) {
+          state.status = 'QR_READY';
+          state.qrRaw = domInfo.dataRef;
+          state.qrDataUrl = await QRCode.toDataURL(domInfo.dataRef, { width: 280, margin: 2 });
+          state.lastError = null;
+          console.log('📱 [WhatsApp-Web.js] QR Code (DOM /login/) siap di-scan!');
+          emitState();
+        } else if (!domInfo.dataRef && domInfo.canvasUrl && !state.qrDataUrl && domInfo.isLoginRoute) {
+          state.status = 'QR_READY';
+          state.qrDataUrl = domInfo.canvasUrl;
+          state.lastError = null;
+          emitState();
+        } else if (domInfo.hasApp && !domInfo.isLoginRoute) {
+          if (state.status !== 'AUTHENTICATED' && state.status !== 'READY') {
+            state.status = 'AUTHENTICATED';
+            state.qrRaw = null;
+            state.qrDataUrl = null;
+            emitState();
+          }
+          if (!domInfo.hasWWebJs && !reinjectTriggered && typeof newClient.inject === 'function') {
+            reinjectTriggered = true;
+            newClient.inject().catch(() => {
+              reinjectTriggered = false;
+            });
+          }
+        } else if (state.status === 'INITIALIZING' && Date.now() - startedAt > 45000) {
+          stopDomQrWatcher();
+          state.status = 'ERROR';
+          state.lastError =
+            'Waktu tunggu habis saat membuka web.whatsapp.com. Pastikan koneksi internet stabil lalu klik Hubungkan lagi.';
+          emitState();
+          if (client === newClient) client = null;
+          await destroyClientSafely(newClient);
+          await killOrphanedSessionBrowsers();
+        }
+      } catch {
+        // Page is navigating between /login/ and / — ignore transient evaluation error
+      }
+    }, 1500);
+
     try {
       await newClient.initialize();
     } catch (err) {
+      stopDomQrWatcher();
       state.status = 'ERROR';
       state.lastError = err.message;
       if (client === newClient) client = null;
@@ -276,6 +359,7 @@ const initializeWhatsAppWeb = async () => {
 };
 
 const closeBrowserOnly = async () => {
+  stopDomQrWatcher();
   if (client) {
     const old = client;
     client = null;
@@ -285,6 +369,7 @@ const closeBrowserOnly = async () => {
 };
 
 const disconnectWhatsAppWeb = async () => {
+  stopDomQrWatcher();
   if (client) {
     const old = client;
     client = null;

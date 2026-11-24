@@ -93,9 +93,10 @@ export default function AdminNotificationsPage() {
     return () => socket.off('wa:status', onWaStatus);
   }, [socket, toast]);
 
-  // Poll WhatsApp Web status every 3s while initializing or waiting for QR scan
+  // Poll WhatsApp Web status every 2.5s while initializing or waiting for QR scan
+  const waStatus = waWeb?.status;
   useEffect(() => {
-    if (!waWeb || !['INITIALIZING', 'QR_READY', 'AUTHENTICATED'].includes(waWeb.status)) return;
+    if (!waStatus || !['INITIALIZING', 'QR_READY', 'AUTHENTICATED'].includes(waStatus)) return;
     const timer = setInterval(async () => {
       try {
         const res = await api.get('/admin/notifications/whatsapp/status');
@@ -103,9 +104,9 @@ export default function AdminNotificationsPage() {
       } catch {
         // ignore transient poll error
       }
-    }, 3000);
+    }, 2500);
     return () => clearInterval(timer);
-  }, [waWeb]);
+  }, [waStatus]);
 
   const handleConnectWa = async () => {
     setConnectingWa(true);
