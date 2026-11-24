@@ -2,7 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 
 const globalForPrisma = global;
 
-const TRANSIENT_CODES = new Set(['P1001', 'P1002', 'P1017', 'P2024']);
+const TRANSIENT_CODES = new Set(['P1001', 'P1002', 'P1008', 'P1017', 'P2024']);
 
 const isTransientConnectionError = (err) => {
   if (!err) return false;
@@ -12,7 +12,11 @@ const isTransientConnectionError = (err) => {
     msg.includes("Can't reach database server") ||
     msg.includes('Server has closed the connection') ||
     msg.includes('Connection terminated') ||
-    msg.includes('Timed out fetching a new connection')
+    msg.includes('Timed out fetching a new connection') ||
+    msg.includes('Error in PostgreSQL connection') ||
+    msg.includes('Engine is not yet connected') ||
+    msg.includes('ECONNRESET') ||
+    msg.includes('ETIMEDOUT')
   );
 };
 
@@ -25,21 +29,22 @@ const createPrismaClient = () => {
     },
   });
 
-  // Auto-retry transient Supabase/network disconnects (P1001/P1017) cleanly once with fast backoff
+  // Auto-retry transient Supabase/network disconnects (P1001/P1017/ECONNRESET) up to 2 times with backoff
   const extended = base.$extends({
     query: {
       $allModels: {
         async $allOperations({ args, query }) {
           let lastError;
-          for (let attempt = 0; attempt < 2; attempt++) {
+          for (let attempt = 0; attempt < 3; attempt++) {
             try {
               return await query(args);
             } catch (err) {
               lastError = err;
-              if (!isTransientConnectionError(err) || attempt === 1) {
+              if (!isTransientConnectionError(err) || attempt === 2) {
                 throw err;
               }
-              await new Promise((r) => setTimeout(r, 250));
+              await new Promise((r) => setTimeout(r, attempt === 0 ? 350 : 900));
+              await base.$connect().catch(() => {});
             }
           }
           throw lastError;
