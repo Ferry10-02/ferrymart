@@ -84,6 +84,14 @@ const clearSessionDir = () => {
   }
 };
 
+const hasSavedSession = () => {
+  try {
+    return fs.existsSync(SESSION_DIR) && fs.readdirSync(SESSION_DIR).length > 0;
+  } catch {
+    return false;
+  }
+};
+
 let client = null;
 let ioRef = null;
 let shouldClearSessionNextInit = false;
@@ -381,7 +389,8 @@ const disconnectWhatsAppWeb = async () => {
     await destroyClientSafely(old);
   }
   await killOrphanedSessionBrowsers();
-  shouldClearSessionNextInit = true;
+  clearSessionDir();
+  shouldClearSessionNextInit = false;
   state.status = 'DISCONNECTED';
   state.qrRaw = null;
   state.qrDataUrl = null;
@@ -411,6 +420,7 @@ const sendViaWhatsAppWeb = async (phoneDigits, message) => {
 module.exports = {
   attachIO,
   getStatus,
+  hasSavedSession,
   initializeWhatsAppWeb,
   disconnectWhatsAppWeb,
   closeBrowserOnly,

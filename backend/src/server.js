@@ -23,10 +23,20 @@ server.listen(env.port, () => {
   console.log(`   WhatsApp Mode   : ${env.whatsapp.provider} (Admin: ${env.whatsapp.adminPhone || '-'})`);
   console.log(`   Telegram Bot API: ${env.telegram.isConfigured ? 'Connected' : 'Belum Terhubung'}`);
 
-  if (env.whatsapp.provider === 'whatsapp-web' && process.env.WHATSAPP_AUTO_START === 'true') {
-    whatsappWeb.initializeWhatsAppWeb().catch((err) => {
-      console.warn('   WhatsApp-Web.js : Gagal auto-init -', err.message);
-    });
+  // Auto-reconnect WhatsApp Web if a linked session already exists (or WHATSAPP_AUTO_START=true)
+  const shouldAutoStartWa =
+    process.env.VERCEL !== '1' &&
+    env.whatsapp.provider === 'whatsapp-web' &&
+    process.env.WHATSAPP_AUTO_START !== 'false' &&
+    (process.env.WHATSAPP_AUTO_START === 'true' || whatsappWeb.hasSavedSession());
+
+  if (shouldAutoStartWa) {
+    console.log('   WhatsApp-Web.js : Sesi tersimpan ditemukan, menyambungkan ulang otomatis...');
+    setTimeout(() => {
+      whatsappWeb.initializeWhatsAppWeb().catch((err) => {
+        console.warn('   WhatsApp-Web.js : Gagal auto-reconnect -', err.message);
+      });
+    }, 1500);
   }
 });
 
