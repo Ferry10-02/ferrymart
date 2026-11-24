@@ -18,6 +18,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import api, { getErrorMessage } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useSocket } from '../../context/SocketContext';
 import { LoadingState, ErrorState, StatusBadge, ConfirmModal } from '../../components/common/UIStates';
@@ -29,6 +30,7 @@ import { formatIDR, formatDate } from '../../utils/format';
 export default function OrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const toast = useToast();
   const { refreshOrderSummary } = useSocket() || {};
 
@@ -205,12 +207,19 @@ export default function OrderDetailPage() {
 
   const { order, qr } = data;
   const payment = order.payment;
+  const isBuyerOwner = user?.id === order.buyerId;
   const canUploadProof =
-    payment && ['PENDING', 'REJECTED', 'WAITING_VERIFICATION'].includes(payment.status);
-  const canCancel = ['PENDING_PAYMENT', 'WAITING_VERIFICATION'].includes(order.status);
+    isBuyerOwner && payment && ['PENDING', 'REJECTED', 'WAITING_VERIFICATION'].includes(payment.status);
+  const canCancel = isBuyerOwner && ['PENDING_PAYMENT', 'WAITING_VERIFICATION'].includes(order.status);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
+      {!isBuyerOwner && (
+        <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-900">
+          <strong>Mode Tinjau Admin/Seller:</strong> Anda sedang melihat pesanan milik pembeli{' '}
+          <strong>{order.buyer?.fullName}</strong> ({order.buyer?.email}). Tombol aksi pembeli (Konfirmasi Diterima, Upload Bukti, Komplain/Refund, & Beri Ulasan) hanya muncul jika login dengan akun pembeli tersebut.
+        </div>
+      )}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <Link to="/orders" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-primary-600">
           <ArrowLeft className="h-4 w-4" /> Kembali ke Riwayat Pesanan
@@ -441,7 +450,7 @@ export default function OrderDetailPage() {
                   </div>
                   <div className="flex items-center gap-3">
                     <p className="text-sm font-bold text-navy-900">{formatIDR(item.totalPrice)}</p>
-                    {['DELIVERED', 'COMPLETED'].includes(so.status) && !item.review && (
+                    {isBuyerOwner && ['DELIVERED', 'COMPLETED'].includes(so.status) && !item.review && (
                       <button
                         type="button"
                         onClick={() => {
@@ -491,29 +500,31 @@ export default function OrderDetailPage() {
                     </button>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {['PAID', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'COMPLETED'].includes(so.status) &&
-                    !(data.refundRequests || []).some(
-                      (rf) => rf.sellerOrderId === so.id && ['PENDING', 'APPROVED'].includes(rf.status)
-                    ) && (
+                {isBuyerOwner && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {['PAID', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'COMPLETED'].includes(so.status) &&
+                      !(data.refundRequests || []).some(
+                        (rf) => rf.sellerOrderId === so.id && ['PENDING', 'APPROVED'].includes(rf.status)
+                      ) && (
+                        <button
+                          type="button"
+                          onClick={() => setRefundTarget(so)}
+                          className="btn-outline border-red-200 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" /> Ajukan Komplain / Refund
+                        </button>
+                      )}
+                    {['SHIPPED', 'DELIVERED'].includes(so.status) && (
                       <button
                         type="button"
-                        onClick={() => setRefundTarget(so)}
-                        className="btn-outline border-red-200 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                        onClick={() => handleConfirmReceived(so.id)}
+                        className="btn-primary px-3.5 py-1.5 text-xs"
                       >
-                        <RotateCcw className="h-3.5 w-3.5" /> Ajukan Komplain / Refund
+                        <CheckCircle2 className="h-4 w-4" /> Pesanan Diterima (Selesai)
                       </button>
                     )}
-                  {['SHIPPED', 'DELIVERED'].includes(so.status) && (
-                    <button
-                      type="button"
-                      onClick={() => handleConfirmReceived(so.id)}
-                      className="btn-primary px-3.5 py-1.5 text-xs"
-                    >
-                      <CheckCircle2 className="h-4 w-4" /> Pesanan Diterima (Selesai)
-                    </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
 
               {(data.refundRequests || [])

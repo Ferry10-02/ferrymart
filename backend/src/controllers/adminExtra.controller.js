@@ -415,8 +415,16 @@ const createRefundRequest = asyncHandler(async (req, res) => {
     },
   });
 
-  if (!sellerOrder || sellerOrder.order.buyerId !== req.user.id) {
+  if (!sellerOrder) {
     throw new AppError('Sub-pesanan tidak ditemukan.', 404, 'SELLER_ORDER_NOT_FOUND');
+  }
+
+  if (sellerOrder.order.buyerId !== req.user.id) {
+    throw new AppError(
+      'Pengajuan komplain/refund hanya dapat dilakukan oleh akun Pembeli pemilik pesanan ini.',
+      403,
+      'BUYER_ONLY_ACTION'
+    );
   }
 
   if (!['PAID', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'COMPLETED'].includes(sellerOrder.status)) {
